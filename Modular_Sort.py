@@ -407,7 +407,7 @@ class MicroDevice(threading.Thread):
     def mask_size(self, worm_mask):
         return numpy.count_nonzero(worm_mask)
 
-    def anaylze_worm(self):
+    def analyze_worm(self):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
@@ -506,7 +506,7 @@ class MicroDevice(threading.Thread):
                                     break
                                 elif self.check_position(current_image, detected_image):
                                     self.check_worm(current_image)
-                                    self.anaylze_worm(current_image)
+                                    self.analyze_worm(current_image)
                                     break
                                 if self.cleared:
                                     self.device_clear_and_reset()
@@ -556,7 +556,7 @@ class NoSort(MicroDevice):
         self.positioned_background = numpy.sum(subtracted[POSITION_AREA])
         self.clear_background = numpy.sum(subtracted[CLEARING_AREA])
 
-    def anaylze_worm(self, current_image):
+    def analyze_worm(self, current_image):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
@@ -580,7 +580,7 @@ class Alternate(MicroDevice):
         self.positioned_background = numpy.sum(subtracted[POSITION_AREA])
         self.clear_background = numpy.sum(subtracted[CLEARING_AREA])
         
-    def anaylze_worm(self, current_image):
+    def analyze_worm(self, current_image):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
@@ -802,7 +802,7 @@ class fluorRedGreen(MicroDevice):
         self.scope.tl.lamp.enabled = True
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
         
-    def anaylze(self, current_image):
+    def analyze_worm(self, current_image):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
@@ -818,6 +818,9 @@ class fluorRedGreen(MicroDevice):
                                  - self.green_background.astype('int32'))
         color_value_green = self.find_fluor_amount(mcherry_subtracted)
         self.save_image(mcherry_fluor_image, 'fluor_mcherry' + str(self.worm_count))
+
+        print('GFP value = ' + str(color_value_cyan))
+        print('mCherry value = ' + str(color_value_green))
         
         double_image = self.capture_image(self.bright)
         worm_size = self.mask_size(self.worm_mask(double_image))
@@ -837,7 +840,7 @@ class fluorRedGreen(MicroDevice):
             + str(self.mcherry_threshold) 
             + "\nSize of Worm after imaging: "
             + str(worm_size) 
-            + "\n")   
+            + "\n")
 
         if worm_size > self.size_threshold:
             print('Detected Double Worm')
