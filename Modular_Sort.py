@@ -20,7 +20,7 @@ import freeimage
 import threading
 import csv
 
-
+#Are we on the no relief branch?
 
 #Setting useful constants
 #Areas for image analysis
