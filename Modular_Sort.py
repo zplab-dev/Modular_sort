@@ -21,8 +21,9 @@ import threading
 import csv
 
 
+
 #Setting useful constants
-#Areas for image anaylsis
+#Areas for image analysis
 IMAGE_SIZE = (1280, 1080)
 BOILER_AREA = (slice(100,750), slice(530,590))
 DETECTION_AREA = (slice(100,950),slice(535, 585))
