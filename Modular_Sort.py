@@ -20,7 +20,6 @@ import freeimage
 import threading
 import csv
 
-#Are we on the no relief branch?
 
 #Setting useful constants
 #Areas for image analysis
@@ -74,8 +73,8 @@ STRAIGHT_CHANNEL_SUCK = 'sl D4'
 STRAIGHT_CHANNEL_PRESSURE = 'sh D4'
 DOWN_CHANNEL_SUCK = 'sl D5'
 DOWN_CHANNEL_PRESSURE = 'sh D5'
-RELIEF_CHANNEL_SUCK = 'sl D2'
-RELIEF_CHANNEL_PRESSURE = 'sh D2'
+#RELIEF_CHANNEL_SUCK = 'sl D2'
+#RELIEF_CHANNEL_PRESSURE = 'sh D2'
 
 #Setting file locations for saving images
 
@@ -169,7 +168,7 @@ class MicroDevice(threading.Thread):
         self.scope.camera.end_image_sequence_acquisition()
         self.device.execute(PUSH_CHANNEL_PRESSURE, SEWER_CHANNEL_PRESSURE,
                             UP_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_PRESSURE,
-                            DOWN_CHANNEL_PRESSURE,RELIEF_CHANNEL_PRESSURE)
+                            DOWN_CHANNEL_PRESSURE)
         
     def device_start_load(self):
         """
@@ -179,7 +178,7 @@ class MicroDevice(threading.Thread):
         print('starting loading')
         self.device.execute(PUSH_CHANNEL_STATIC, SEWER_CHANNEL_SUCK,
                             UP_CHANNEL_PRESSURE,STRAIGHT_CHANNEL_PRESSURE,
-                            DOWN_CHANNEL_PRESSURE, RELIEF_CHANNEL_SUCK)
+                            DOWN_CHANNEL_PRESSURE)
         
     def device_push_queue(self):
         print('pushing queue')
@@ -191,7 +190,7 @@ class MicroDevice(threading.Thread):
         print(' ')
         print('Worm has been sucesfully pushed into the device')
         self.time_seen = time.time()
-        self.device.execute(PUSH_CHANNEL_PRESSURE, RELIEF_CHANNEL_SUCK)
+        self.device.execute(PUSH_CHANNEL_PRESSURE)
         
     def device_stop_load(self):
         """
@@ -199,7 +198,7 @@ class MicroDevice(threading.Thread):
         """
         self.device.execute(SEWER_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_PRESSURE, 
                             UP_CHANNEL_PRESSURE, DOWN_CHANNEL_PRESSURE,
-                            PUSH_CHANNEL_PRESSURE, RELIEF_CHANNEL_PRESSURE)
+                            PUSH_CHANNEL_PRESSURE)
         
     def device_sort(self, direction):
         """
@@ -210,16 +209,14 @@ class MicroDevice(threading.Thread):
         print('Sorting worm'+ direction)
         if direction == 'up':
             self.device.execute(SEWER_CHANNEL_PRESSURE,
-                                UP_CHANNEL_SUCK,
-                                RELIEF_CHANNEL_SUCK)
+                                UP_CHANNEL_SUCK)
         elif direction == 'down':
             self.device.execute(SEWER_CHANNEL_PRESSURE,
-                                DOWN_CHANNEL_SUCK,
-                                RELIEF_CHANNEL_SUCK)
+                                DOWN_CHANNEL_SUCK)
         else:
             self.device.execute(SEWER_CHANNEL_PRESSURE,
-                                STRAIGHT_CHANNEL_SUCK,
-                                RELIEF_CHANNEL_SUCK) 
+                                STRAIGHT_CHANNEL_SUCK)
+
         cleared_image = self.capture_image(self.bright)
         while not self.check_cleared(cleared_image):
             if self.cleared:
@@ -255,22 +252,19 @@ class MicroDevice(threading.Thread):
                                     STRAIGHT_CHANNEL_SUCK, 
                                     UP_CHANNEL_SUCK,
                                     DOWN_CHANNEL_SUCK,
-                                    PUSH_CHANNEL_PRESSURE,
-                                    RELIEF_CHANNEL_PRESSURE)
+                                    PUSH_CHANNEL_PRESSURE)
                 time.sleep(1)
                 self.device.execute(SEWER_CHANNEL_SUCK,
                                     PUSH_CHANNEL_STATIC,
                                     STRAIGHT_CHANNEL_PRESSURE,
                                     UP_CHANNEL_PRESSURE,
-                                    DOWN_CHANNEL_PRESSURE,
-                                    RELIEF_CHANNEL_SUCK)
+                                    DOWN_CHANNEL_PRESSURE)
         except KeyboardInterrupt:
             self.device.execute(PUSH_CHANNEL_PRESSURE,
                                 SEWER_CHANNEL_PRESSURE,
                                 UP_CHANNEL_PRESSURE, 
                                 STRAIGHT_CHANNEL_PRESSURE,
-                                DOWN_CHANNEL_PRESSURE,
-                                RELIEF_CHANNEL_PRESSURE)
+                                DOWN_CHANNEL_PRESSURE)
         
         
     def device_clear_tubes(self):
@@ -280,7 +274,7 @@ class MicroDevice(threading.Thread):
         """
         self.device.execute(SEWER_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_PRESSURE, 
                             UP_CHANNEL_PRESSURE, DOWN_CHANNEL_PRESSURE,
-                            PUSH_CHANNEL_PRESSURE, RELIEF_CHANNEL_PRESSURE)       
+                            PUSH_CHANNEL_PRESSURE)       
     def lamp_off(self):
         """
         Turns the lamp off
@@ -387,8 +381,8 @@ class MicroDevice(threading.Thread):
         #print('Checking pushing forwards')
         #rint('Detected Value:' + str((numpy.sum(numpy.abs(current_image[DETECTION_AREA] - self.background[DETECTION_AREA]))- self.detect_background)))
         #print('Required Value:' + str( PUSH_THRESH * self.detect_background))
-        if time.time() - self.time_queue_push_start > MAX_PUSH_TIME:
-            return True
+       # if time.time() - self.time_queue_push_start > MAX_PUSH_TIME:
+       #     return True
         return ((numpy.sum(numpy.abs(current_image[DETECTION_AREA] 
                                      - self.background[DETECTION_AREA]))-self.detect_background) 
         > PUSH_THRESH  * self.detect_background)
@@ -492,31 +486,31 @@ class MicroDevice(threading.Thread):
                     paused_image = self.capture_image(self.bright)
                 cycle_count += 1
                 current_image = self.capture_image(self.bright)
-                if self.check_queue(current_image):
-                    self.device_push_queue()
-                    while not self.quitting:
+                #if self.check_queue(current_image):
+                  #  self.device_push_queue()
+                    #while not self.quitting:
+                     #   current_image = self.capture_image(self.bright)
+                if self.check_pushed_forwards(current_image):   #detect worms 
+                    #3 stop worms
+                    self.device_position_worm()     #stop
+                    while not self.quitting:        #sort loop
+                        detected_image = current_image
                         current_image = self.capture_image(self.bright)
-                        if self.check_pushed_forwards(current_image):
-                            #3 stop worms
-                            self.device_position_worm()
-                            while not self.quitting:
-                                detected_image = current_image
-                                current_image = self.capture_image(self.bright)
-                                if self.check_lost(current_image):
-                                    self.device_clear_lost_worm()
-                                    break
-                                elif self.check_position(current_image, detected_image):
-                                    self.check_worm(current_image)
-                                    self.analyze_worm(current_image)
-                                    break
-                                if self.cleared:
-                                    self.device_clear_and_reset()
-                                    break
-                                else:
-                                    detected_image = current_image
-                            print('Breaking out of second loop')
-                            self.device_start_load()
+                        if self.check_lost(current_image):
+                            self.device_clear_lost_worm()
                             break
+                        elif self.check_position(current_image, detected_image):
+                            self.check_worm(current_image)
+                            self.analyze_worm(current_image)
+                            break
+                        if self.cleared:
+                            self.device_clear_and_reset()
+                            break
+                        else:
+                            detected_image = current_image
+                    print('Breaking out of second loop')
+                    self.device_start_load()
+                    break
                     
                     
                 if cycle_count % PROGRESS_RATE == 0:
@@ -821,7 +815,7 @@ class fluorRedGreen(MicroDevice):
         self.save_image(mcherry_fluor_image, 'fluor_mcherry' + str(self.worm_count))
 
         print('GFP value = ' + str(color_value_cyan))
-        print('mCherry value = ' + str(color_value_green))
+        print('mCherry value = '+ str(color_value_green))
         
         double_image = self.capture_image(self.bright)
         worm_size = self.mask_size(self.worm_mask(double_image))
