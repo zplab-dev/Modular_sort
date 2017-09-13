@@ -63,6 +63,8 @@ PROGRESS_RATE = 100
 
 #Setting useful commands for device control
 
+#Testing ability to push from scope computer
+
 PUSH_CHANNEL_PRESSURE= 'sh D6'
 PUSH_CHANNEL_STATIC = 'sl D6'
 SEWER_CHANNEL_PRESSURE = 'sh D7'
