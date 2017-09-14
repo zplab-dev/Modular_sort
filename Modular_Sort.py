@@ -772,6 +772,11 @@ class fluorRedGreen(MicroDevice):
         self.min_size_threshold = int(min_size)
         
     def find_fluor_amount(self, image):
+        """
+        Why is this function different from the 95th percentile version? Question for Tim or Zach
+        
+        """
+
         
         blurred = scipy.ndimage.gaussian_filter(image, sigma = 2)
         low_vales = blurred < FLUOR_PIXEL_BRIGHT_VALUE
@@ -875,17 +880,17 @@ class fluorRedGreen(MicroDevice):
             print('Worm sorted Straight')
             
             
-class FluoRedGreen_Setup(fluorRedGreen):
+class FluoRedGreenSetup(fluorRedGreen):
     """
     """
     def __init__(self, exp_direct):
-        super().__init__(exp_direct)
+        #super().__init__(exp_direct)
         self.max_worm_size = int(input('Whats the initial size threshold?'))
         self.min_worm_size = int(input('What is the initial small size threshold?'))
         self.num_of_worms = int(input('How many worms to survey?'))
         self.size = list()
-        self.GFP_fluorescence = list()
-        self.mCherry_fluorescence = list()
+        self.gfp_fluorescence = list()
+        self.mcherry_fluorescence = list()
 
     def find_thresholds(self, num_of_worms):
         """
@@ -897,8 +902,8 @@ class FluoRedGreen_Setup(fluorRedGreen):
         avg_size = numpy.mean(self.size)
         size_90 = numpy.percentile(self.size, 90)
         size_10 = numpy.percentile(self.size, 10)
-        avg_gfp = numpy.mean(self.GFP_fluorescence)
-        avg_mCherry = numpy.mean(self.mCherry_fluorescence)
+        avg_gfp = numpy.mean(self.gfp_fluorescence)
+        avg_mcherry = numpy.mean(self.mcherry_fluorescence)
        
         self.size_threshold = size_90 * DOUBLE_THRES
         self.min_size_threshold = size_10 * .5
@@ -907,9 +912,8 @@ class FluoRedGreen_Setup(fluorRedGreen):
         print('90_size =' + str(size_90))
         print('10_size =' + str(size_10))
         print('Avg Gfp =' + str(avg_gfp))
-        print('Avg mCherry = ' + str(avg_mCherry))
-        print('10_gfp =' + str(self.bottom_mir71_threshold))
-        print('90_gfp =' + str(self.upper_mir71_threshold))
+        print('Avg mCherry = ' + str(avg_mcherry))
+
 
     def analyze_worm(self, current_image):
         if self.worm_count > (num_of_worms - 1):
@@ -933,7 +937,7 @@ class FluoRedGreen_Setup(fluorRedGreen):
             
             current_image = self.capture_image(self.green_yellow)
             self.save_image(current_image, 'calibration_wormMcherry' + str(worm_count))
-            mCherry_image = abs(current_image.astype('int32')-self.green_background.astype('int32'))
+            mcherry_image = abs(current_image.astype('int32')-self.green_background.astype('int32'))
             mcherry_amount = self.find_fluor_amount(mcherry_image, worm_mask)
             print('mCherry amount = ' + str(mcherry_amount))
         
@@ -941,8 +945,12 @@ class FluoRedGreen_Setup(fluorRedGreen):
             self.lamp_off()
             self.scope.tl.lamp.enabled = True
             self.size.append(worm_size)
-            self.GFP_fluorescence.append(gfp_amount)
-            self.mCherry_fluorescence.append(mcherry_amount)
+
+            if gfp_amount > mcherry_amount:
+                self.gfp_fluorescence.append(gfp_amount)
+            elif mcherry_amount > gfp_amount:
+                self.mcherry_fluorescence.append(mcherry_amount)
+
             self.device_sort('straight')
             self.worm_direction = 'straight'
 
