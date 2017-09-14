@@ -875,10 +875,10 @@ class fluorRedGreen(MicroDevice):
             print('Worm sorted Straight')
             
             
-class FluoRedGreen_Setup(fluorRedGreen)
+class FluoRedGreen_Setup(fluorRedGreen):
     """
     """
-     def __init__(self, exp_direct):
+    def __init__(self, exp_direct):
         super().__init__(exp_direct)
         self.max_worm_size = int(input('Whats the initial size threshold?'))
         self.min_worm_size = int(input('What is the initial small size threshold?'))
@@ -907,7 +907,7 @@ class FluoRedGreen_Setup(fluorRedGreen)
         print('90_size =' + str(size_90))
         print('10_size =' + str(size_10))
         print('Avg Gfp =' + str(avg_gfp))
-        print('Avg mCherry' = +str(avg_mCherry))
+        print('Avg mCherry = ' + str(avg_mCherry))
         print('10_gfp =' + str(self.bottom_mir71_threshold))
         print('90_gfp =' + str(self.upper_mir71_threshold))
 
