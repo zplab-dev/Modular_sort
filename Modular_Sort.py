@@ -872,4 +872,77 @@ class fluorRedGreen(MicroDevice):
             self.device_sort('straight')
             self.worm_direction = 'straight'
             self.summary_statistics.write("Straight\n")
-            print('Worm sorted Straight')     
+            print('Worm sorted Straight')
+            
+            
+class FluoRedGreen_Setup(fluorRedGreen)
+    """
+    """
+     def __init__(self, exp_direct):
+        super().__init__(exp_direct)
+        self.max_worm_size = int(input('Whats the initial size threshold?'))
+        self.min_worm_size = int(input('What is the initial small size threshold?'))
+        self.num_of_worms = int(input('How many worms to survey?'))
+        self.size = list()
+        self.GFP_fluorescence = list()
+        self.mCherry_fluorescence = list()
+
+    def find_thresholds(self, num_of_worms):
+        """
+        Input desired number of worms to build histograms of fluorescence and size.
+        """
+
+        self.run()
+
+        avg_size = numpy.mean(self.size)
+        size_90 = numpy.percentile(self.size, 90)
+        size_10 = numpy.percentile(self.size, 10)
+        avg_gfp = numpy.mean(self.GFP_fluorescence)
+        avg_mCherry = numpy.mean(self.mCherry_fluorescence)
+       
+        self.size_threshold = size_90 * DOUBLE_THRES
+        self.min_size_threshold = size_10 * .5
+
+        print('Avg Size =' + str(avg_size))
+        print('90_size =' + str(size_90))
+        print('10_size =' + str(size_10))
+        print('Avg Gfp =' + str(avg_gfp))
+        print('Avg mCherry' = +str(avg_mCherry))
+        print('10_gfp =' + str(self.bottom_mir71_threshold))
+        print('90_gfp =' + str(self.upper_mir71_threshold))
+
+    def analyze_worm(self, current_image):
+        if self.worm_count > (num_of_worms - 1):
+            self.quit()
+        worm_mask = self.worm_mask(current_image)
+        worm_size = self.mask_size(worm_mask)
+        if worm_size > max_worm_size or worm_size < min_worm_size:
+            print('Bad Worm')
+            self.worm_direction = 'straight'
+        else:
+            self.worm_count += 1
+            print('Worm number ' + str(worm_count) + ' out of ' + str(num_of_worms))
+            self.save_image(current_image, 'calibration_wormGFP'+ str(worm_count))
+            print('images_saved')
+            
+            current_image = self.capture_image(self.cyan)
+            self.save_image(current_image, 'calibration_worm_GFPfluor' + str(worm_count))
+            gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
+            gfp_amount = self.find_fluor_amount(gfp_image, worm_mask)
+            print('GFP amount = ' + str(gfp_amount))
+            
+            current_image = self.capture_image(self.green_yellow)
+            self.save_image(current_image, 'calibration_wormMcherry' + str(worm_count))
+            mCherry_image = abs(current_image.astype('int32')-self.green_background.astype('int32'))
+            mcherry_amount = self.find_fluor_amount(mcherry_image, worm_mask)
+            print('mCherry amount = ' + str(mcherry_amount))
+        
+            self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
+            self.lamp_off()
+            self.scope.tl.lamp.enabled = True
+            self.size.append(worm_size)
+            self.GFP_fluorescence.append(gfp_amount)
+            self.mCherry_fluorescence.append(mcherry_amount)
+            self.device_sort('straight')
+            self.worm_direction = 'straight'
+
