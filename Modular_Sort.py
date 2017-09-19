@@ -207,7 +207,7 @@ class MicroDevice(threading.Thread):
         Have yet to test if having teh pusher channel be set to static when sorting to help worms load faster.
         
         """
-        print('Sorting worm'+ direction)
+        print('Sorting worm '+ direction)
         if direction == 'up':
             self.device.execute(SEWER_CHANNEL_PRESSURE,
                                 UP_CHANNEL_SUCK,
@@ -372,8 +372,8 @@ class MicroDevice(threading.Thread):
 
     def check_cleared(self, current_image):
         print('Checking Clear')
-        worm_visibility = abs(current_image[DETECTION_AREA]
-                              - self.background[DETECTION_AREA])
+        worm_visibility = abs(current_image[CLEARING_AREA]
+                              - self.background[CLEARING_AREA])
         return ((numpy.sum(worm_visibility) - self.positioned_background) 
             < LOST_CUTOFF * self.positioned_background) 
     
@@ -389,8 +389,8 @@ class MicroDevice(threading.Thread):
         #print('Required Value:' + str( PUSH_THRESH * self.detect_background))
         if time.time() - self.time_queue_push_start > MAX_PUSH_TIME:
             return True
-        return ((numpy.sum(numpy.abs(current_image[DETECTION_AREA] 
-                                     - self.background[DETECTION_AREA]))-self.detect_background) 
+        return ((numpy.sum(numpy.abs(current_image[POSITION_AREA] 
+                                     - self.background[POSITION_AREA]))-self.detect_background) 
         > PUSH_THRESH  * self.detect_background)
     
     def worm_mask(self, worm_iamge):
