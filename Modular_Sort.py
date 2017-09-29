@@ -59,7 +59,7 @@ BRIGHT_FIELD_EXPOSURE_TIME = 2
 
 LIGHT_DELAY = .05
 PICTURE_DELAY = .01
-SORTING_INTERVAL = 0.5
+SORTING_INTERVAL = 0.3
 MAX_SORTING_TIME = 1.5
 
 BACKGROUND_REFRESH_RATE = 100000
@@ -77,6 +77,7 @@ STRAIGHT_CHANNEL_SUCK = 'sl D4'
 STRAIGHT_CHANNEL_PRESSURE = 'sh D4'
 DOWN_CHANNEL_SUCK = 'sl D5'
 DOWN_CHANNEL_PRESSURE = 'sh D5'
+
 
 #Setting file locations for saving images
 
@@ -459,7 +460,7 @@ class MicroDevice(threading.Thread):
         self.save_image(background, 'background')
         self.set_background_areas()
         print('setting backgrounds')
-        time.sleep(5)
+        time.sleep(2)
         
         #1 Loading Worms
         self.device_start_load()
@@ -471,7 +472,7 @@ class MicroDevice(threading.Thread):
         try:
             while True:
                 if self.quitting:
-                    self.clear_double_worms()
+                    self.device_clear_tubes()
                     break
                 while not self.running:
                     paused_image = self.capture_image(self.bright)
@@ -482,7 +483,7 @@ class MicroDevice(threading.Thread):
                 if self.detect_worms(current_image, background):
                     print(' ')
                     print(' ')
-                    print('Worm hsd been detected')
+                    print('Worm has been detected')
                     #Worm is detected because of a significant change from background.
                     time_seen = time.time()
                     detected_image = current_image
@@ -507,9 +508,23 @@ class MicroDevice(threading.Thread):
                             worm_size = self.size_of_worm(difference_between_worm_background)
                             print('Size of worm before sorting: ' + str(worm_size))
                             if worm_size > self.size_threshold:
-                                
                                 print('Detected Double Worm')
-                                self.clear_double_worms()
+                                self.save_image(current_image, 'doubled worm_analyze', True)
+                                self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size)) 
+                                self.device_sort('straight')
+                                self.worm_direction = 'straight'
+                                self.summary_statistics.write("Straight\n")
+                                print('Doubled worms sorted Straight')
+                                time.sleep(1)
+                                break
+                            elif worm_size < self.min_worm_size:
+                                print('Detected small worm')
+                                self.save_image(current_image, 'small worm_analyze', True)
+                                self.summary_statistics.write( '\n small worm size of: ' + str(worm_size))
+                                self.device_sort('straight')
+                                self.worm_direction = 'straight'
+                                self.summary_statistics.write('Straight\n')
+                                time.sleep(1)
                                 break
                             self.worm_count += 1
                             #self.worm_data = list()
@@ -559,7 +574,7 @@ class MicroDevice(threading.Thread):
                         else:
                             detected_image = current_image
                         #9 --> 1
-                    print('starting loading')
+                        
                     self.device_start_load()
                     
                 elif cycle_count % PROGRESS_RATE == 0:
@@ -676,12 +691,17 @@ class Mir71(MicroDevice):
         self.upper_mir71_threshold = int(top_threshold)
         bottom_threshold = input('What do you want the bottom X% of expressiont to be = ')
         self.bottom_mir71_threshold = int(bottom_threshold)
-        size = input('What do you want the Size Threshold = ')
-        self.size_threshold = int(size)* DOUBLE_THRES
+        self.size_threshold = int(input('What do you want the large size threshold to be = '))
+        self.min_worm_size = int(input('What do you want the small size threshold to be = '))
+        
         
     def find_thresholds(self, num_of_worms):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None,
                                                            trigger_mode='Software')
+        
+        self.histogram_values_location = self.file_location.joinpath('histogram.txt')
+        self.histogram_values = open(str(self.histogram_values_location),'w')
+        
         background = self.capture_image(self.bright)
         self.boiler = boiler()
         self.save_image(background, 'calibration_background')
@@ -736,11 +756,13 @@ class Mir71(MicroDevice):
                             self.save_image(current_image, 'calibration_worm_flour' + str(worm_count))
                             gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
                             gfp_amount = self.find_flour_amount(gfp_image, worm_mask)
+                            worm_size = self.size_of_worm(difference_between_worm_background)
                             print('GFP amount = ' + str(gfp_amount))
+                            print('worm size = ' + str(worm_size))
                             self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
                             self.lamp_off()
                             self.scope.tl.lamp.enabled = True
-                            self.size.append(self.size_of_worm(difference_between_worm_background))
+                            self.size.append(worm_size)
                             self.flourescents.append(gfp_amount)
                             self.device_sort('straight')
                             self.worm_direction = 'straight'
@@ -759,17 +781,47 @@ class Mir71(MicroDevice):
             self.device_stop_run()
             avg_size = numpy.mean(self.size)
             size_90 = numpy.percentile(self.size, 90)
+            size_10 = numpy.percentile(self.size, 10)
             avg_gfp = numpy.mean(self.flourescents)
             self.bottom_mir71_threshold = numpy.percentile(self.flourescents, 10)
             self.upper_mir71_threshold = numpy.percentile(self.flourescents, 90)
             self.size_threshold = size_90 * DOUBLE_THRES
+            self.min_worm_size = size_10 * 0.7
             
-            print('Fluorescence list =' +str(flourescents))
+            print('Fluorescence list = \n ' , str(self.flourescents))
+            print('Avg Gfp =' + str(avg_gfp))
+            print('90_gfp =' + str(self.upper_mir71_threshold))
+            print('10_gfp =' + str(self.bottom_mir71_threshold))
+            
+            print('Size list = \n' , str(self.size))
+
             print('Avg Size =' + str(avg_size))
             print('90_size =' + str(size_90))
-            print('Avg Gfp =' + str(avg_gfp))
-            print('10_gfp =' + str(self.bottom_mir71_threshold))
-            print('90_gfp =' + str(self.upper_mir71_threshold))
+            print('10_size =' + str(size_10))
+            
+            self.histogram_values.write('Fluorescence list = '
+                                          + str(self.flourescents) 
+                                          + ' based off of '
+                                        + str(len(self.flourescents))
+                                        + ' worms'
+                                        +'\n Avg GFP = '
+                                        + str(avg_gfp)
+                                        +'\n 90th percentile GFP = '
+                                        + str(self.upper_mir71_threshold)
+                                        +'\n 10th percentile GFP = '
+                                        + str(self.bottom_mir71_threshold)
+                                        +'\n'
+                                        +'\n Size list ='
+                                        + str(self.size)
+                                        +'\n Avg size = '
+                                        + str(avg_size)
+                                        +'\n 90th percentile size = '
+                                        + str(size_90)
+                                        +'\n 10th percentile size = '
+                                        + str(size_10)
+                                        )
+            
+            self.histogram_values.close()
                             
     def anaylze(self, background, worm_image=False):
         gfp_fluor_image = self.capture_image(self.cyan)
@@ -779,7 +831,6 @@ class Mir71(MicroDevice):
         worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
         worm_mask = self.worm_mask(worm_subtracted) 
         worm_flour = self.find_flour_amount(gfp_subtracted, worm_mask)
-        sort = False
         
         self.summary_statistics.write("Gfp Fluorescence: " 
             + str(worm_flour))
@@ -787,29 +838,34 @@ class Mir71(MicroDevice):
         print('GFP value = ' + str(worm_flour))
         
         
-        double_image = self.capture_image(self.bright)
-        difference_between_worm_background = (abs(double_image.astype('int32') - background.astype('int32')))
-        worm_size = self.size_of_worm(difference_between_worm_background)
-        print("Size of worm after imaging :" + str(worm_size))
+        after_image = self.capture_image(self.bright)
+        difference_between_worm_background = (abs(after_image.astype('int32') - background.astype('int32')))
+        worm_size_2 = self.size_of_worm(difference_between_worm_background)
+        print("Size of worm after imaging :" + str(worm_size_2))
         
-        if worm_size > self.size_threshold:
+        if worm_size_2 > self.size_threshold:
             print('Detected Double Worm')
-            self.save_image(double_image, 'doubled worm_analyze', True)
-            self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size)) 
+            self.save_image(after_image, 'doubled worm_analyze', True)
+            self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size_2)) 
             self.device_sort('straight')
             self.worm_direction = 'straight'
             self.summary_statistics.write("Straight\n")
             print('Doubled worms sorted Straight')
+        elif worm_size_2 < self.min_worm_size:
+            print('Detected small worm')
+            self.save_image(after_image, 'small worm_analyze', True)
+            self.summary_statistics.write( '\n small worm size of: ' + str(worm_size_2))
+            self.device_sort('straight')
+            self.worm_direction = 'straight'
+            self.summary_statistics.write('Straight\n')
     
-        elif worm_flour > self.upper_mir71_threshold and not sort:
-            sort = True
+        elif worm_flour > self.upper_mir71_threshold:
             self.up += 1
             self.device_sort('up')
             self.worm_direction = 'up'
             self.summary_statistics.write("Up\n")
             print('Worm sorted Up    ' + str(self.up))
-        elif worm_flour < self.bottom_mir71_threshold and not sort:
-            sort = True
+        elif worm_flour < self.bottom_mir71_threshold and worm_flour > 200:
             self.down += 1
             self.device_sort('down')
             self.worm_direction = 'down'
@@ -1026,8 +1082,8 @@ class FlourRedGreen(MicroDevice):
         color_value_green = self.find_flour_amount(mcherry_subtracted)
         self.save_image(mcherry_fluor_image, 'flour_mcherry', True)
         
-        double_image = self.capture_image(self.bright)
-        difference_between_worm_background = (abs(double_image.astype('int32') - background.astype('int32')))
+        after_image = self.capture_image(self.bright)
+        difference_between_worm_background = (abs(after_image.astype('int32') - background.astype('int32')))
         worm_size = self.size_of_worm(difference_between_worm_background)
         print("Size of worm after imaging :" + str(worm_size))
         Double = False
@@ -1050,7 +1106,7 @@ class FlourRedGreen(MicroDevice):
             + "\n")                              
         if worm_size > self.size_threshold:
             print('Detected Double Worm')
-            self.save_image(double_image, 'doubled worm_analyze', True)
+            self.save_image(after_image, 'doubled worm_analyze', True)
             self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size)) 
             Double = True
                             
