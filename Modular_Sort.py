@@ -709,6 +709,8 @@ class Mir71(MicroDevice):
         self.size = list()
         self.flourescents = list()
         self.device_start_load()
+        initial_max_size = int(input('Initial size threshold: '))
+        initial_min_size = int(input('Initial min size threshold: '))
         worm_count = 0
         cycle_count= 0
         try:
@@ -744,9 +746,27 @@ class Mir71(MicroDevice):
                             #    print('Not a worm')
                             #    break
                             worm_count += 1
-                            print('Worm number ' + str(worm_count) + ' out of ' + str(num_of_worms))
                             difference_between_worm_background = (abs(current_image.astype('int32') - background.astype('int32')))
+                            worm_size = self.size_of_worm(difference_between_worm_background)
+                            print('worm size = ' + str(worm_size))
+                            if worm_size > initial_max_size:
+                                worm_count -= 1
+                                print('Detected Double Worm')
+                                self.worm_direction = 'straight'
+                                self.device_sort('straight')
+                                self.clear_worms(background)
+                                break
+                            if worm_size < initial_min_size:
+                                worm_count -= 1
+                                print('Small worm')
+                                self.worm_direction = 'straight'
+                                self.device_sort('straight')
+                                self.clear_worms(background)
+                                break
+
                             worm_mask = self.worm_mask(difference_between_worm_background)
+                            print('Worm number ' + str(worm_count) + ' out of ' + str(num_of_worms))
+
                             #self.save_image(worm_mask.astpye('int32'), 'calibration_worm_mask' + str(worm_count))
                             self.save_image(current_image, 'calibration_worm'+ str(worm_count))
                             print('images_saved')
@@ -756,9 +776,15 @@ class Mir71(MicroDevice):
                             self.save_image(current_image, 'calibration_worm_flour' + str(worm_count))
                             gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
                             gfp_amount = self.find_flour_amount(gfp_image, worm_mask)
-                            worm_size = self.size_of_worm(difference_between_worm_background)
                             print('GFP amount = ' + str(gfp_amount))
-                            print('worm size = ' + str(worm_size))
+                            if gfp_amount < 300:
+                                worm_count -= 1
+                                print('Worm bellow Mir-71 expression threshold')
+                                self.worm_direction = 'straight'
+                                self.device_sort('straight')
+                                self.clear_worms(background)
+                                break
+                            print('Worm in appropriate size and fluorescence range')
                             self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
                             self.lamp_off()
                             self.scope.tl.lamp.enabled = True
@@ -799,29 +825,24 @@ class Mir71(MicroDevice):
             print('90_size =' + str(size_90))
             print('10_size =' + str(size_10))
             
-            self.histogram_values.write('Fluorescence list = '
-                                          + str(self.flourescents) 
-                                          + ' based off of '
-                                        + str(len(self.flourescents))
-                                        + ' worms'
-                                        +'\n Avg GFP = '
-                                        + str(avg_gfp)
-                                        +'\n 90th percentile GFP = '
-                                        + str(self.upper_mir71_threshold)
-                                        +'\n 10th percentile GFP = '
-                                        + str(self.bottom_mir71_threshold)
+            self.histogram_values.write('Fluorescence list = '+ str(self.flourescents) 
+                                        +' based off of '+ str(len(self.flourescents))+ ' worms'
+                                        +'\n Avg GFP = '+ str(avg_gfp)
+                                        +'\n 90th percentile GFP = '+ str(self.upper_mir71_threshold)
+                                        +'\n 10th percentile GFP = '+ str(self.bottom_mir71_threshold)
                                         +'\n'
-                                        +'\n Size list ='
-                                        + str(self.size)
-                                        +'\n Avg size = '
-                                        + str(avg_size)
-                                        +'\n 90th percentile size = '
-                                        + str(size_90)
-                                        +'\n 10th percentile size = '
-                                        + str(size_10)
+                                        +'\n Size list ='+ str(self.size)
+                                        +'\n Avg size = '+ str(avg_size)
+                                        +'\n 90th percentile size = '+ str(size_90)
+                                        +'\n 10th percentile size = '+ str(size_10)
                                         )
             
             self.histogram_values.close()
+
+    def update_thresholds(self, gfp_amount):
+        self.run_flourescents.append(gfp_amount)
+        self.bottom_mir71_threshold = numpy.percentile(self.run_flourescents, 10)
+        self.upper_mir71_threshold = numpy.percentile(self.run_flourescents, 90)
                             
     def anaylze(self, background, worm_image=False):
         gfp_fluor_image = self.capture_image(self.cyan)
@@ -865,7 +886,7 @@ class Mir71(MicroDevice):
             self.worm_direction = 'up'
             self.summary_statistics.write("Up\n")
             print('Worm sorted Up    ' + str(self.up))
-        elif worm_flour < self.bottom_mir71_threshold and worm_flour > 200:
+        elif worm_flour < self.bottom_mir71_threshold and worm_flour > 300:
             self.down += 1
             self.device_sort('down')
             self.worm_direction = 'down'
