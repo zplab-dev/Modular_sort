@@ -31,14 +31,14 @@ BOILER_AREA = (slice(530,1100), slice(530,590))
 DETECTION_AREA = (slice(690,1100), slice(545, 575))
 POSITION_AREA = (slice(690,1000), slice(545, 575))
 CLEARING_AREA = (slice(300,900), slice(480, 620)) #Modified clearing area from 620 to 520 to insure the worm has left the area before being determined to be sorted.
-FLOURESCENT_AREA = (slice(500,1100), slice(530, 590))
+FLUORESCENT_AREA = (slice(500,1100), slice(530, 590))
 #DOUBLE_AREA = (slice(670,870), slice(570,580))
 #TOP_PUSHER_CHANNEL_AREA = (slice(580,830),slice(55,300))
 #STRAIGHT_PUSHER_CHANNEL_AREA = (slice(70,30),slice(350,500))
 #BOTTOM_PUSHER_CHANNEL_AREA = (slice(580,830), slice(780,1030))
 #BUBBLE_AREA = (slice(800,1000),slice(376,500))
 
-FLOUR_PIXEL_BRIGHT_VALUE = 500
+FLUOR_PIXEL_BRIGHT_VALUE = 500
 DETECTION_THRES = 4
 POSITION_THRES = 3
 CLEARING_THRES = 3
@@ -128,13 +128,13 @@ class MicroDevice(threading.Thread):
         if device_type == 'n':
             print('Using New Set up')
             global IMAGE_SIZE, BOILER_AREA, DETECTION_AREA, POSITION_AREA
-            global CLEARING_AREA, FLOURESCENT_AREA, DOUBLE_AREA
+            global CLEARING_AREA, FLUORESCENT_AREA, DOUBLE_AREA
             IMAGE_SIZE = (1280, 1080)
             BOILER_AREA = (slice(480,1000), slice(540,585))
             DETECTION_AREA = (slice(500,1045), slice(550, 580))
             POSITION_AREA = (slice(510,930), slice(545, 575))
             CLEARING_AREA = (slice(375,750), slice(535, 590))
-            FLOURESCENT_AREA = (slice(480,1000), slice(540,585))
+            FLUORESCENT_AREA = (slice(480,1000), slice(540,585))
             DOUBLE_AREA = (slice(480,1000), slice(540,585))
             print(DETECTION_AREA)
         
@@ -159,7 +159,7 @@ class MicroDevice(threading.Thread):
              wormwriter = csv.writer(wormdata, dialect = 'excel')
              wormwriter.writerow(['Worm Number', 'Worm Size', 'Worm Direction',
                                   'Detection Time', 'Analysis Time', 'Sort Time',
-                                  'FlourMcherry', 'FlourGFP'])
+                                  'FluorMcherry', 'FluorGFP'])
              for worms in worm_data: 
                  wormwriter.writerow(worms)
 
@@ -707,7 +707,7 @@ class Mir71(MicroDevice):
         self.save_image(background, 'calibration_background')
         self.set_background_areas()
         self.size = list()
-        self.flourescents = list()
+        self.fluorescence = list()
         self.device_start_load()
         initial_max_size = int(input('Initial size threshold: '))
         initial_min_size = int(input('Initial min size threshold: '))
@@ -773,9 +773,9 @@ class Mir71(MicroDevice):
                             
                             #CYAN
                             current_image = self.capture_image(self.cyan)
-                            self.save_image(current_image, 'calibration_worm_flour' + str(worm_count))
+                            self.save_image(current_image, 'calibration_worm_fluor' + str(worm_count))
                             gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
-                            gfp_amount = self.find_flour_amount(gfp_image, worm_mask)
+                            gfp_amount = self.find_fluor_amount(gfp_image, worm_mask)
                             print('GFP amount = ' + str(gfp_amount))
                             if gfp_amount < 300:
                                 worm_count -= 1
@@ -789,7 +789,7 @@ class Mir71(MicroDevice):
                             self.lamp_off()
                             self.scope.tl.lamp.enabled = True
                             self.size.append(worm_size)
-                            self.flourescents.append(gfp_amount)
+                            self.fluorescence.append(gfp_amount)
                             self.device_sort('straight')
                             self.worm_direction = 'straight'
                             self.clear_worms(background,True, True)
@@ -808,13 +808,13 @@ class Mir71(MicroDevice):
             avg_size = numpy.mean(self.size)
             size_90 = numpy.percentile(self.size, 90)
             size_10 = numpy.percentile(self.size, 10)
-            avg_gfp = numpy.mean(self.flourescents)
-            self.bottom_mir71_threshold = numpy.percentile(self.flourescents, 10)
-            self.upper_mir71_threshold = numpy.percentile(self.flourescents, 90)
+            avg_gfp = numpy.mean(self.fluorescence)
+            self.bottom_mir71_threshold = numpy.percentile(self.fluorescence, 10)
+            self.upper_mir71_threshold = numpy.percentile(self.fluorescence, 90)
             self.size_threshold = size_90 * DOUBLE_THRES
             self.min_worm_size = size_10 * 0.7
             
-            print('Fluorescence list = \n ' , str(self.flourescents))
+            print('Fluorescence list = \n ' , str(self.fluorescence))
             print('Avg Gfp =' + str(avg_gfp))
             print('90_gfp =' + str(self.upper_mir71_threshold))
             print('10_gfp =' + str(self.bottom_mir71_threshold))
@@ -825,8 +825,8 @@ class Mir71(MicroDevice):
             print('90_size =' + str(size_90))
             print('10_size =' + str(size_10))
             
-            self.histogram_values.write('Fluorescence list = '+ str(self.flourescents) 
-                                        +' based off of '+ str(len(self.flourescents))+ ' worms'
+            self.histogram_values.write('Fluorescence list = '+ str(self.fluorescence) 
+                                        +' based off of '+ str(len(self.fluorescence))+ ' worms'
                                         +'\n Avg GFP = '+ str(avg_gfp)
                                         +'\n 90th percentile GFP = '+ str(self.upper_mir71_threshold)
                                         +'\n 10th percentile GFP = '+ str(self.bottom_mir71_threshold)
@@ -840,9 +840,9 @@ class Mir71(MicroDevice):
             self.histogram_values.close()
 
     def update_thresholds(self, gfp_amount):
-        self.run_flourescents.append(gfp_amount)
-        self.bottom_mir71_threshold = numpy.percentile(self.run_flourescents, 10)
-        self.upper_mir71_threshold = numpy.percentile(self.run_flourescents, 90)
+        self.run_fluorescence.append(gfp_amount)
+        self.bottom_mir71_threshold = numpy.percentile(self.run_fluorescence, 10)
+        self.upper_mir71_threshold = numpy.percentile(self.run_fluorescence, 90)
                             
     def anaylze(self, background, worm_image=False):
         gfp_fluor_image = self.capture_image(self.cyan)
@@ -851,12 +851,12 @@ class Mir71(MicroDevice):
                              - self.cyan_background.astype('int32'))
         worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
         worm_mask = self.worm_mask(worm_subtracted) 
-        worm_flour = self.find_flour_amount(gfp_subtracted, worm_mask)
+        worm_fluor = self.find_fluor_amount(gfp_subtracted, worm_mask)
         
         self.summary_statistics.write("Gfp Fluorescence: " 
-            + str(worm_flour))
+            + str(worm_fluor))
         
-        print('GFP value = ' + str(worm_flour))
+        print('GFP value = ' + str(worm_fluor))
         
         
         after_image = self.capture_image(self.bright)
@@ -880,13 +880,13 @@ class Mir71(MicroDevice):
             self.worm_direction = 'straight'
             self.summary_statistics.write('Straight\n')
     
-        elif worm_flour > self.upper_mir71_threshold:
+        elif worm_fluor > self.upper_mir71_threshold:
             self.up += 1
             self.device_sort('up')
             self.worm_direction = 'up'
             self.summary_statistics.write("Up\n")
             print('Worm sorted Up    ' + str(self.up))
-        elif worm_flour < self.bottom_mir71_threshold and worm_flour > 300:
+        elif worm_fluor < self.bottom_mir71_threshold and worm_fluor > 300:
             self.down += 1
             self.device_sort('down')
             self.worm_direction = 'down'
@@ -902,14 +902,14 @@ class Mir71(MicroDevice):
     
             
         
-    def find_flour_amount(self, subtracted_image, worm_mask):
+    def find_fluor_amount(self, subtracted_image, worm_mask):
         gfp_image = subtracted_image[worm_mask]
         gfp_count = numpy.percentile(gfp_image, 95)
         return gfp_count
         
         
         
-class FlourRedGreen(MicroDevice):
+class FluorRedGreen(MicroDevice):
     
     def auto_set_up(self):
         gfp = input('What do you want as the GFP Threshold = ')
@@ -922,8 +922,8 @@ class FlourRedGreen(MicroDevice):
     def device_set_up(self, num_of_worms):
         """
         Function that runs a given amount of worms through the device and using a humans
-        discretion to determine if they are floursecent will set threshold values
-        for the automation of sorting flourescent worms
+        discretion to determine if they are fluorsecent will set threshold values
+        for the automation of sorting fluorescent worms
         """
         self.scope.camera.start_image_sequence_acquisition(frame_count=None,
                                                            trigger_mode='Software')
@@ -967,9 +967,9 @@ class FlourRedGreen(MicroDevice):
                             #CYAN
                             current_image = self.capture_image(self.cyan)
                             gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
-                            GFP_amount = self.find_flour_amount(gfp_image)
+                            GFP_amount = self.find_fluor_amount(gfp_image)
                             print('GFP amount = ' + str(GFP_amount))
-                            is_worm_gfp = input('Is this worm flourescent in GFP? [y] for yes, [c] for not a worm: ')
+                            is_worm_gfp = input('Is this worm fluorescent in GFP? [y] for yes, [c] for not a worm: ')
                             if is_worm_gfp == 'y':
                                 self.save_image(gfp_image.astype('uint16'), 'calibration_gfp_image'+ str(i))
                                 gfp_thresh.append(GFP_amount)
@@ -985,21 +985,21 @@ class FlourRedGreen(MicroDevice):
                             elif is_worm_gfp != 'y':
                                 self.save_image(current_image, 'calibration_null_gfp_worm'+ str(i))
                                 null_gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
-                                null_gfp_thresh.append(numpy.percentile(null_gfp_image[FLOURESCENT_AREA].astype('int32'),
+                                null_gfp_thresh.append(numpy.percentile(null_gfp_image[FLUORESCENT_AREA].astype('int32'),
                                                                         FLUORESCENCE_PERCENTILE))
                             #Green_yellow
                             current_image = self.capture_image(self.green_yellow)
                             mcherry_image = abs(current_image.astype('int32')- self.green_background.astype('int32'))
-                            MCHERRY_amount = self.find_flour_amount(mcherry_image)
+                            MCHERRY_amount = self.find_fluor_amount(mcherry_image)
                             print('Amount of Mcherry = ' + str(MCHERRY_amount))
-                            is_worm_mcherry = input('Is this worm flourescent in mcherry? [y] for yes ')
+                            is_worm_mcherry = input('Is this worm fluorescent in mcherry? [y] for yes ')
                             if is_worm_mcherry == 'y':
                                 self.save_image(mcherry_image.astype('uint16'), 'calibration_mcherry_image'+ str(i))
                                 mcherry_thresh.append(MCHERRY_amount) 
                             elif is_worm_mcherry != 'y':
                                 self.save_image(current_image, 'calibration_null_mcherry_worm' + str(i))
                                 null_mcherry_image = abs(current_image.astype('int32')- self.green_background.astype('int32'))
-                                null_mcherry_thresh.append(numpy.percentile(null_mcherry_image[FLOURESCENT_AREA].astype('int32'),
+                                null_mcherry_thresh.append(numpy.percentile(null_mcherry_image[FLUORESCENT_AREA].astype('int32'),
                                                                             FLUORESCENCE_PERCENTILE))
                             self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
                             self.lamp_off()
@@ -1054,14 +1054,14 @@ class FlourRedGreen(MicroDevice):
                                         +'\n Max worm size seen: ='
                                         + str(self.size_threshold))
                                 
-    def find_flour_amount(self, image):
+    def find_fluor_amount(self, image):
         
         blurred = scipy.ndimage.gaussian_filter(image, sigma = 2)
-        low_vales = blurred < FLOUR_PIXEL_BRIGHT_VALUE
+        low_vales = blurred < FLUOR_PIXEL_BRIGHT_VALUE
         blurred[low_vales] = 0
         scipy.ndimage.morphology.binary_erosion(blurred, None, 4)
         scipy.ndimage.morphology.binary_dilation(blurred, None, 4)
-        return numpy.sum(blurred[FLOURESCENT_AREA])
+        return numpy.sum(blurred[FLUORESCENT_AREA])
     
     def set_background_areas(self):
         """
@@ -1094,14 +1094,14 @@ class FlourRedGreen(MicroDevice):
         gfp_fluor_image = self.capture_image(self.cyan)
         gfp_subtracted = abs(gfp_fluor_image.astype('int32')
                              - self.cyan_background.astype('int32'))
-        color_value_cyan = self.find_flour_amount(gfp_subtracted)
+        color_value_cyan = self.find_fluor_amount(gfp_subtracted)
         self.save_image(gfp_fluor_image, 'fluor_gfp', True)
         
         mcherry_fluor_image = self.capture_image(self.green_yellow)
         mcherry_subtracted = abs(mcherry_fluor_image.astype('int32')
                                  - self.green_background.astype('int32'))
-        color_value_green = self.find_flour_amount(mcherry_subtracted)
-        self.save_image(mcherry_fluor_image, 'flour_mcherry', True)
+        color_value_green = self.find_fluor_amount(mcherry_subtracted)
+        self.save_image(mcherry_fluor_image, 'fluor_mcherry', True)
         
         after_image = self.capture_image(self.bright)
         difference_between_worm_background = (abs(after_image.astype('int32') - background.astype('int32')))
