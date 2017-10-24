@@ -53,7 +53,7 @@ CLOG_THRESH = 10
 FLUORESCENCE_PERCENTILE = 99
 BACKGROUND_FRACTION = .99 #For Setting worm mask
 
-CYAN_EXPOSURE_TIME = 4
+CYAN_EXPOSURE_TIME = 50
 YELLOW_EXPOSURE_TIME = 8
 BRIGHT_FIELD_EXPOSURE_TIME = 2
 
@@ -64,6 +64,8 @@ MAX_SORTING_TIME = 1.5
 
 BACKGROUND_REFRESH_RATE = 100000
 PROGRESS_RATE = 100
+
+MIN_GFP_THRESH = 400 #Will need to reset to account for brighter exposure
 
 #Setting useful commands for device control
 
@@ -155,15 +157,8 @@ class MicroDevice(threading.Thread):
         
         self.resume() #(testing)
         
-    def write_csv_file(self, worm_data):
-         with open(str(self.data_location), 'w', newline = '') as wormdata:
-             wormwriter = csv.writer(wormdata, dialect = 'excel')
-             wormwriter.writerow(['Worm Number', 'Worm Size', 'Worm Direction',
-                                  'Detection Time', 'Analysis Time', 'Sort Time',
-                                  'FluorMcherry', 'FluorGFP'])
-             for worms in worm_data: 
-                 wormwriter.writerow(worms)
-
+    def write_csv_line(csv,data):
+        csv.write(','.join(map(str, data)) + '\n')
         
     def set_scope(self):
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
@@ -702,7 +697,11 @@ class Mir71(MicroDevice):
         
         self.histogram_values_location = self.file_location.joinpath('histogram.txt')
         self.histogram_values = open(str(self.histogram_values_location),'w')
-        
+        csv_location = self.file_location.joinpath('histogram_csv.txt')
+        histogram_csv = open(str(csv_location), 'w')
+        header = ['worm_number', 'size', 'fluorescence', 'direction', 'time']
+        histogram_csv.write(','.join(header) + '\n')
+
         background = self.capture_image(self.bright)
         self.boiler = boiler()
         self.save_image(background, 'calibration_background')
@@ -714,6 +713,7 @@ class Mir71(MicroDevice):
         initial_min_size = 3500
         worm_count = 0
         cycle_count= 0
+        time_start = time.time()
         try:
             while True:
                 cycle_count += 1
@@ -727,6 +727,7 @@ class Mir71(MicroDevice):
                     print('Worm has been detected')
                     #Worm is detected because of a significant change from background.
                     detected_image = current_image
+                    time_seen = time.time() - time_start
                     #Stop Worms
                     self.device_stop_load()
                     print('stopped loading more worms')
@@ -778,7 +779,7 @@ class Mir71(MicroDevice):
                             gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
                             gfp_amount = self.find_fluor_amount(gfp_image, worm_mask)
                             print('GFP amount = ' + str(gfp_amount))
-                            if gfp_amount < 300:
+                            if gfp_amount < MIN_GFP_THRESH:
                                 worm_count -= 1
                                 print('Worm bellow Mir-71 expression threshold')
                                 self.worm_direction = 'straight'
@@ -794,6 +795,8 @@ class Mir71(MicroDevice):
                             self.device_sort('straight')
                             self.worm_direction = 'straight'
                             self.clear_worms(background,True, True)
+                            worm_data = [worm_count, worm_size, gfp_amount, self.worm_direction, time_seen]
+                            write_csv_line(histogram_csv, worm_data)
                             break
                         else:
                             detected_image = current_image
@@ -839,6 +842,7 @@ class Mir71(MicroDevice):
                                         )
             
             self.histogram_values.close()
+            histogram_csv.close()
 
     
     def anaylze(self, background, worm_image=False):
