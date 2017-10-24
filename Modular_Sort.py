@@ -59,7 +59,7 @@ BRIGHT_FIELD_EXPOSURE_TIME = 2
 
 LIGHT_DELAY = .05
 PICTURE_DELAY = .01
-SORTING_INTERVAL = 0.3
+SORTING_INTERVAL = 0.4
 MAX_SORTING_TIME = 1.5
 
 BACKGROUND_REFRESH_RATE = 100000
@@ -116,7 +116,8 @@ class MicroDevice(threading.Thread):
         
         self.file_location = Path(exp_direct)
         self.file_location.mkdir(mode=0o777, parents=True, exist_ok=True)
-        self.summary_location = self.file_location.joinpath('summary.txt')
+        date = exp_direct.split('/')[-1]
+        self.summary_location = self.file_location.joinpath('summary_' + date + '.txt')
         self.summary_statistics = open(str(self.summary_location),'w')
         self.data_location = self.file_location.joinpath('wormdata.csv')
         
@@ -147,7 +148,7 @@ class MicroDevice(threading.Thread):
         #worm_data = list()
         
         #Pausing stuff
-        self.running = False
+        self.running = True
         super().__init__(daemon=True)
         self.quitting = False
         self.cleared = False
@@ -709,8 +710,8 @@ class Mir71(MicroDevice):
         self.size = list()
         self.fluorescence = list()
         self.device_start_load()
-        initial_max_size = int(input('Initial size threshold: '))
-        initial_min_size = int(input('Initial min size threshold: '))
+        initial_max_size = 8000
+        initial_min_size = 3500
         worm_count = 0
         cycle_count= 0
         try:
@@ -839,11 +840,7 @@ class Mir71(MicroDevice):
             
             self.histogram_values.close()
 
-    def update_thresholds(self, gfp_amount):
-        self.run_fluorescence.append(gfp_amount)
-        self.bottom_mir71_threshold = numpy.percentile(self.run_fluorescence, 10)
-        self.upper_mir71_threshold = numpy.percentile(self.run_fluorescence, 90)
-                            
+    
     def anaylze(self, background, worm_image=False):
         gfp_fluor_image = self.capture_image(self.cyan)
         self.save_image(gfp_fluor_image, 'fluor_gfp', True)
