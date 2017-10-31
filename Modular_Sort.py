@@ -59,7 +59,7 @@ BRIGHT_FIELD_EXPOSURE_TIME = 2
 
 LIGHT_DELAY = .05
 PICTURE_DELAY = .01
-SORTING_INTERVAL = 0.4
+SORTING_INTERVAL = 0.75
 MAX_SORTING_TIME = 1.5
 
 BACKGROUND_REFRESH_RATE = 100000
@@ -121,6 +121,10 @@ class MicroDevice(threading.Thread):
         date = exp_direct.split('/')[-1]
         self.summary_location = self.file_location.joinpath('summary_' + date + '.txt')
         self.summary_statistics = open(str(self.summary_location),'w')
+        summary_csv_location = self.file_location.joinpath('summary_csv.txt')
+        summary_csv = open(str(summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'reason']
+        summary_csv.write(','.join(header) + '\n')
         self.data_location = self.file_location.joinpath('wormdata.csv')
         
         self.device_clear_tubes()
@@ -157,7 +161,7 @@ class MicroDevice(threading.Thread):
         
         self.resume() #(testing)
         
-    def write_csv_line(csv,data):
+    def write_csv_line(self, csv,data):
         csv.write(','.join(map(str, data)) + '\n')
         
     def set_scope(self):
@@ -511,7 +515,7 @@ class MicroDevice(threading.Thread):
                                 self.worm_direction = 'straight'
                                 self.summary_statistics.write("Straight\n")
                                 print('Doubled worms sorted Straight')
-                                time.sleep(1)
+                                time.sleep(0.5)
                                 break
                             elif worm_size < self.min_worm_size:
                                 print('Detected small worm')
@@ -520,7 +524,7 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight')
                                 self.worm_direction = 'straight'
                                 self.summary_statistics.write('Straight\n')
-                                time.sleep(1)
+                                time.sleep(0.5)
                                 break
                             self.worm_count += 1
                             #self.worm_data = list()
@@ -699,7 +703,7 @@ class Mir71(MicroDevice):
         self.histogram_values = open(str(self.histogram_values_location),'w')
         csv_location = self.file_location.joinpath('histogram_csv.txt')
         histogram_csv = open(str(csv_location), 'w')
-        header = ['worm_number', 'size', 'fluorescence', 'direction', 'time']
+        header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'reason']
         histogram_csv.write(','.join(header) + '\n')
 
         background = self.capture_image(self.bright)
@@ -794,9 +798,10 @@ class Mir71(MicroDevice):
                             self.fluorescence.append(gfp_amount)
                             self.device_sort('straight')
                             self.worm_direction = 'straight'
+                            reason = 'histogram'
                             self.clear_worms(background,True, True)
-                            worm_data = [worm_count, worm_size, gfp_amount, self.worm_direction, time_seen]
-                            write_csv_line(histogram_csv, worm_data)
+                            worm_data = [worm_count, worm_size, gfp_amount, time_seen, self.worm_direction, reason]
+                            self.write_csv_line(histogram_csv, worm_data)
                             break
                         else:
                             detected_image = current_image
