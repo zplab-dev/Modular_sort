@@ -209,10 +209,19 @@ class MicroDevice(threading.Thread):
         """
         if direction == 'up':
             self.device.execute(SEWER_CHANNEL_PRESSURE, UP_CHANNEL_SUCK ,PUSH_CHANNEL_STATIC)
+            if self.check_cleared():
+                time.sleep(SORTING_INTERVAL)
+                self.device.execute(UP_CHANNEL_PRESSURE)
         elif direction == 'down':
             self.device.execute(SEWER_CHANNEL_PRESSURE, DOWN_CHANNEL_SUCK, PUSH_CHANNEL_STATIC)
+            if self.check_cleared():
+                time.sleep(SORTING_INTERVAL)
+                self.device.execute(DOWN_CHANNEL_PRESSURE)
         elif direction == 'straight':
             self.device.execute(SEWER_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_SUCK, PUSH_CHANNEL_STATIC)
+            if self.check_cleared():
+                time.sleep(SORTING_INTERVAL)
+                self.device.execute(STRAIGHT_CHANNEL_PRESSURE)
             
             
     def device_clear_bubbles(self):
@@ -420,8 +429,8 @@ class MicroDevice(threading.Thread):
         except KeyboardInterrupt:
             pass
     """
-    
-    def check_cleared:
+
+    def check_cleared(self):
         while not self.cleared:
             current_image = self.capture_image(self.bright)
             sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
@@ -563,7 +572,7 @@ class MicroDevice(threading.Thread):
                             print('Worm number: ' + str(self.worm_count))
                             
                             #8 move worms
-                            self.clear_worms(background)
+                            #self.clear_worms(background)                #Under construction
                             if self.cleared:
                                 self.device.execute(SEWER_CHANNEL_PRESSURE, UP_CHANNEL_PRESSURE, 
                                                     STRAIGHT_CHANNEL_PRESSURE,DOWN_CHANNEL_PRESSURE)
