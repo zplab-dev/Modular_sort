@@ -29,7 +29,7 @@ import csv
 IMAGE_SIZE = (1280, 1080)
 BOILER_AREA = (slice(530,1100), slice(530,590))
 DETECTION_AREA = (slice(690,1100), slice(545, 575))
-POSITION_AREA = (slice(690,1000), slice(545, 575))
+POSITION_AREA = (slice(690,1000), slice(545, 575))  #Align left end of sewer corner to 690, 575
 CLEARING_AREA = (slice(530,1000), slice(530, 580)) 
 FLUORESCENT_AREA = (slice(500,1100), slice(530, 590))
 #DOUBLE_AREA = (slice(670,870), slice(570,580))
@@ -738,7 +738,7 @@ class Mir71(MicroDevice):
         #initial_max_size = int(input('Initial size threshold: '))
         #initial_min_size = int(input('Initial min size threshold: '))
         initial_max_size = 8000
-        initial_min_size = 2000
+        initial_min_size = 3000
         
         worm_count = 0
         cycle_count= 0
