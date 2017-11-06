@@ -362,7 +362,7 @@ class MicroDevice(threading.Thread):
         floored_image = backgroundSubtraction.percentile_floor(subtracted_image, .99)
         floored_image[self.boiler] = 0
         backgroundSubtraction.clean_dust_and_holes(floored_image)
-        self.save_image(floored_image.astype('uint16'), 'worm_mask', True)
+        #self.save_image(floored_image.astype('uint16'), 'worm_mask', True)
         a = (-1*numpy.sum(floored_image))
         return (a)
     
@@ -372,12 +372,13 @@ class MicroDevice(threading.Thread):
         backgroundSubtraction.clean_dust_and_holes(floored_image)
         return floored_image.astype('bool')
         
-    def anaylze(self):
+    def analyze(self):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
         """
         raise NotImplementedError('No sorting method given')
+
     """                                                                         #Under construction
     def clear_worms(self, background, photos=False, calibration=False):
         ""
@@ -437,16 +438,25 @@ class MicroDevice(threading.Thread):
     """
 
     def check_cleared(self, background):
-        while not self.cleared:
-            current_image = self.capture_image(self.bright)
-            sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
-            if numpy.sum(sorted_worm_difference) < CLEARING_THRES * self.clear_background:
-                print('Worm determined cleared')
-                return True
-            else:
-                self.device.execute(PUSH_CHANNEL_PRESSURE)
-                self.device.execute(SEWER_CHANNEL_PRESSURE)
-                print('still pushing')
+        try:
+            while not self.cleared:
+                current_image = self.capture_image(self.bright)
+                sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
+                if numpy.sum(sorted_worm_difference) < CLEARING_THRES * self.clear_background:
+                    print('Worm determined cleared')
+                    return True
+                else:
+                    self.device.execute(PUSH_CHANNEL_PRESSURE)
+                    self.device.execute(SEWER_CHANNEL_PRESSURE)
+                    print('still pushing')
+        except KeyboardInterrupt:   #Use if stuck in loop, or if background reset required
+            background = self.capture_image(self.bright)
+            self.save_image(background, 'new_background')
+            self.set_background_areas()
+            print('resetting backgrounds')
+            time.sleep(1)
+            pass
+
 
     def clear_double_worms(self):
         self.device.execute(SEWER_CHANNEL_PRESSURE,
@@ -572,8 +582,8 @@ class MicroDevice(threading.Thread):
                             #self.save_image(difference_between_worm_background.astype('uint16'), 'worm_subtracted', True)
                             print('Images saved')
                             
-                            #6/7 anaylze worms/sort  
-                            self.anaylze(background, current_image)
+                            #6/7 analyze worms/sort  
+                            self.analyze(background, current_image, calibration = False)
                             print('Worms analyzed and sorted')
                             print('Worm number: ' + str(self.worm_count))
                             
@@ -650,7 +660,7 @@ class NoSort(MicroDevice):
         self.positioned_background = numpy.sum(subtracted[POSITION_AREA])
         self.clear_background = numpy.sum(subtracted[CLEARING_AREA])
 
-    def anaylze(self, background):
+    def analyze(self, background):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
@@ -675,7 +685,7 @@ class Alternate(MicroDevice):
         self.positioned_background = numpy.sum(subtracted[POSITION_AREA])
         self.clear_background = numpy.sum(subtracted[CLEARING_AREA])
         
-    def anaylze(self,background, worm_image=False):
+    def analyze(self,background, worm_image=False):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
@@ -740,7 +750,7 @@ class Mir71(MicroDevice):
         initial_max_size = 8000
         initial_min_size = 3000
         
-        worm_count = 0
+        self.worm_count = 0
         cycle_count= 0
         time_start = time.time()
         try:
@@ -748,7 +758,7 @@ class Mir71(MicroDevice):
                 cycle_count += 1
                 if not cycle_count % PROGRESS_RATE:
                     print(str(PROGRESS_RATE) + ' cycles')
-                if worm_count >= num_of_worms:
+                if self.worm_count >= num_of_worms:
                     print('Done')
                     break
                 current_image = self.capture_image(self.bright)
@@ -776,12 +786,12 @@ class Mir71(MicroDevice):
                             #    time.sleep(2)
                             #    print('Not a worm')
                             #    break
-                            worm_count += 1
+                            self.worm_count += 1
                             difference_between_worm_background = (abs(current_image.astype('int32') - background.astype('int32')))
                             worm_size = self.size_of_worm(difference_between_worm_background)
                             print('worm size = ' + str(worm_size))
                             if worm_size > initial_max_size:
-                                worm_count -= 1
+                                self.worm_count -= 1
                                 print('Detected Double Worm')
                                 self.worm_direction = 'straight'
                                 reason = 'double'
@@ -789,7 +799,7 @@ class Mir71(MicroDevice):
                                 #self.clear_worms(background)
                                 break
                             if worm_size < initial_min_size:
-                                worm_count -= 1
+                                self.worm_count -= 1
                                 print('Small worm')
                                 self.worm_direction = 'straight'
                                 reason = 'small'
@@ -797,19 +807,23 @@ class Mir71(MicroDevice):
                                 #self.clear_worms(background)
                                 break
 
-                            worm_mask = self.worm_mask(difference_between_worm_background)
-                            print('Worm number ' + str(worm_count) + ' out of ' + str(num_of_worms))
+                            #worm_mask = self.worm_mask(difference_between_worm_background)
+                            #self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', True)
+                            print('Worm number ' + str(self.worm_count) + ' out of ' + str(num_of_worms))
 
                             #self.save_image(worm_mask.astpye('int32'), 'calibration_worm_mask' + str(worm_count))
-                            self.save_image(current_image, 'calibration_worm'+ str(worm_count))
+                            #self.save_image(current_image, 'calibration_worm'+ str(self.worm_count))
+                            self.save_image(current_image, 'calibration_worm', True)
                             print('images_saved')
                             
                             #CYAN
-                            current_image = self.capture_image(self.cyan)
-                            self.save_image(current_image, 'calibration_worm_fluor' + str(worm_count))
-                            gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
-                            gfp_amount = self.find_fluor_amount(gfp_image, worm_mask)
-                            print('GFP amount = ' + str(gfp_amount))
+                            #current_image = self.capture_image(self.cyan)
+                            #self.save_image(current_image, 'calibration_worm_fluor' + str(worm_count))
+                            #gfp_image = abs(current_image.astype('int32')- self.cyan_background.astype('int32'))
+                            #gfp_amount = self.find_fluor_amount(gfp_image, worm_mask)
+                            #print('GFP amount = ' + str(gfp_amount))
+
+                            gfp_amount = self.analyze(background, current_image, calibration = True)
                             if gfp_amount < MIN_GFP_THRESH:
                                 worm_count -= 1
                                 print('Worm bellow Mir-71 expression threshold')
@@ -818,6 +832,7 @@ class Mir71(MicroDevice):
                                 self.device_sort('straight', background)
                                 #self.clear_worms(background)
                                 break
+
                             print('Worm in appropriate size and fluorescence range')
                             self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
                             self.lamp_off()
@@ -879,64 +894,69 @@ class Mir71(MicroDevice):
             histogram_csv.close()
 
                             
-    def anaylze(self, background, worm_image=False):
+    def analyze(self, background, worm_image=False, calibration=False):
+
         gfp_fluor_image = self.capture_image(self.cyan)
-        self.save_image(gfp_fluor_image, 'fluor_gfp', True)
-        gfp_subtracted = abs(gfp_fluor_image.astype('int32')
-                             - self.cyan_background.astype('int32'))
+        gfp_subtracted = abs(gfp_fluor_image.astype('int32')- self.cyan_background.astype('int32'))
         worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
-        worm_mask = self.worm_mask(worm_subtracted) 
+        worm_mask = self.worm_mask(worm_subtracted)
+
         worm_fluor = self.find_fluor_amount(gfp_subtracted, worm_mask)
-        
-        self.summary_statistics.write("Gfp Fluorescence: " 
-            + str(worm_fluor))
-        
         print('GFP value = ' + str(worm_fluor))
         
+        if calibration:
+            self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', True)
+            self.save_image(gfp_fluor_image, 'calibration_worm_fluor', True)
+            return worm_fluor
+
+        if not calibration:
+            self.save_image(worm_mask.astype('uint16'), 'worm_mask', True)
+            self.save_image(gfp_fluor_image, 'fluor_gfp', True)
+            self.summary_statistics.write("Gfp Fluorescence: " + str(worm_fluor))
+
+            after_image = self.capture_image(self.bright)
+            difference_between_worm_background = (abs(after_image.astype('int32') - background.astype('int32')))
+            worm_size_2 = self.size_of_worm(difference_between_worm_background)
+            print("Size of worm after imaging :" + str(worm_size_2))
+            
+            if worm_size_2 > self.size_threshold:
+                self.worm_count -= 1
+                print('Detected Double Worm')
+                self.save_image(after_image, 'doubled worm_analyze', True)
+                self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size_2)) 
+                self.device_sort('straight', background)
+                self.worm_direction = 'straight'
+                reason = 'New_worm'
+                self.summary_statistics.write("Straight\n")
+                print('Doubled worms sorted Straight')
+            elif worm_size_2 < self.min_worm_size:
+                self.worm_count -= 1
+                print('Detected small worm')
+                self.save_image(after_image, 'small worm_analyze', True)
+                self.summary_statistics.write( '\n small worm size of: ' + str(worm_size_2))
+                self.device_sort('straight', background)
+                self.worm_direction = 'straight'
+                reason = 'lost?'
+                self.summary_statistics.write('Straight\n')
         
-        after_image = self.capture_image(self.bright)
-        difference_between_worm_background = (abs(after_image.astype('int32') - background.astype('int32')))
-        worm_size_2 = self.size_of_worm(difference_between_worm_background)
-        print("Size of worm after imaging :" + str(worm_size_2))
-        
-        if worm_size_2 > self.size_threshold:
-            self.worm_count -= 1
-            print('Detected Double Worm')
-            self.save_image(after_image, 'doubled worm_analyze', True)
-            self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size_2)) 
-            self.device_sort('straight', background)
-            self.worm_direction = 'straight'
-            reason = 'New_worm'
-            self.summary_statistics.write("Straight\n")
-            print('Doubled worms sorted Straight')
-        elif worm_size_2 < self.min_worm_size:
-            self.worm_count -= 1
-            print('Detected small worm')
-            self.save_image(after_image, 'small worm_analyze', True)
-            self.summary_statistics.write( '\n small worm size of: ' + str(worm_size_2))
-            self.device_sort('straight', background)
-            self.worm_direction = 'straight'
-            reason = 'lost?'
-            self.summary_statistics.write('Straight\n')
-    
-        elif worm_fluor > self.upper_mir71_threshold:
-            self.up += 1
-            self.device_sort('up', background)
-            self.worm_direction = 'up'
-            self.summary_statistics.write("Up\n")
-            print('Worm sorted Up    ' + str(self.up))
-        elif worm_fluor < self.bottom_mir71_threshold and worm_fluor > 300:
-            self.down += 1
-            self.device_sort('down', background)
-            self.worm_direction = 'down'
-            self.summary_statistics.write("Down\n")
-            print('Worm sorted Down   ' + str(self.down))
-        else:
-            self.straight += 1
-            self.device_sort('straight', background)
-            self.worm_direction = 'straight'
-            self.summary_statistics.write("straight\n")
-            print('Worm sorted straight    ' + str(self.straight))
+            elif worm_fluor > self.upper_mir71_threshold:
+                self.up += 1
+                self.device_sort('up', background)
+                self.worm_direction = 'up'
+                self.summary_statistics.write("Up\n")
+                print('Worm sorted Up    ' + str(self.up))
+            elif worm_fluor < self.bottom_mir71_threshold and worm_fluor > 300:
+                self.down += 1
+                self.device_sort('down', background)
+                self.worm_direction = 'down'
+                self.summary_statistics.write("Down\n")
+                print('Worm sorted Down   ' + str(self.down))
+            else:
+                self.straight += 1
+                self.device_sort('straight', background)
+                self.worm_direction = 'straight'
+                self.summary_statistics.write("straight\n")
+                print('Worm sorted straight    ' + str(self.straight))
             
     
             
@@ -1124,7 +1144,7 @@ class FluorRedGreen(MicroDevice):
         self.scope.tl.lamp.enabled = True
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
         
-    def anaylze(self, background, current_image):
+    def analyze(self, background, current_image):
         """
         function that tells the device what sorting/analzying method to use:
         Is overwritten by a super class
