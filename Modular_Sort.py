@@ -59,7 +59,7 @@ BRIGHT_FIELD_EXPOSURE_TIME = 2
 
 LIGHT_DELAY = .05
 PICTURE_DELAY = .01
-SORTING_INTERVAL = .75
+SORTING_INTERVAL = .4
 MAX_SORTING_TIME = 1.5
 
 BACKGROUND_REFRESH_RATE = 100000
@@ -118,8 +118,8 @@ class MicroDevice(threading.Thread):
         
         self.file_location = Path(exp_direct)
         self.file_location.mkdir(mode=0o777, parents=True, exist_ok=True)
-        date = exp_direct.split('/')[-1]
-        self.summary_location = self.file_location.joinpath('summary_' + date + '.txt')
+        self.date = exp_direct.split('/')[-1]
+        self.summary_location = self.file_location.joinpath('summary_' + self.date + '.txt')
         self.summary_statistics = open(str(self.summary_location),'w')
         summary_csv_location = self.file_location.joinpath('summary_csv.txt')   #TODO: change to .csv, fix path/writing
         summary_csv = open(str(summary_csv_location), 'w')
@@ -439,7 +439,7 @@ class MicroDevice(threading.Thread):
 
     def check_cleared(self, background):
         try:
-            while not self.cleared:
+            while True:
                 current_image = self.capture_image(self.bright)
                 sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
                 if numpy.sum(sorted_worm_difference) < CLEARING_THRES * self.clear_background:
@@ -455,7 +455,7 @@ class MicroDevice(threading.Thread):
             self.set_background_areas()
             print('resetting backgrounds')
             time.sleep(1)
-            pass
+            return True
 
 
     def clear_double_worms(self):
@@ -492,7 +492,7 @@ class MicroDevice(threading.Thread):
         self.save_image(background, 'background')
         self.set_background_areas()
         print('setting backgrounds')
-        time.sleep(2)
+        time.sleep(1)
         
         #1 Loading Worms
         self.device_start_load()
@@ -731,9 +731,9 @@ class Mir71(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None,
                                                            trigger_mode='Software')
         
-        self.histogram_values_location = self.file_location.joinpath('histogram.txt')
+        self.histogram_values_location = self.file_location.joinpath('histogram' + self.date + '.txt')
         self.histogram_values = open(str(self.histogram_values_location),'w')
-        csv_location = self.file_location.joinpath('histogram_csv.txt')
+        csv_location = self.file_location.joinpath('histogram_csv' + self.date + '.txt')
         histogram_csv = open(str(csv_location), 'w')
         header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'reason']
         histogram_csv.write(','.join(header) + '\n')
@@ -742,13 +742,15 @@ class Mir71(MicroDevice):
         self.boiler = boiler()
         self.save_image(background, 'calibration_background')
         self.set_background_areas()
+        print('setting backgrounds')
+        time.sleep(1)
         self.size = list()
         self.fluorescence = list()
         self.device_start_load()
         #initial_max_size = int(input('Initial size threshold: '))
         #initial_min_size = int(input('Initial min size threshold: '))
         initial_max_size = 8000
-        initial_min_size = 3000
+        initial_min_size = 3500
         
         self.worm_count = 0
         cycle_count= 0
@@ -825,7 +827,7 @@ class Mir71(MicroDevice):
 
                             gfp_amount = self.analyze(background, current_image, calibration = True)
                             if gfp_amount < MIN_GFP_THRESH:
-                                worm_count -= 1
+                                self.worm_count -= 1
                                 print('Worm bellow Mir-71 expression threshold')
                                 self.worm_direction = 'straight'
                                 reason = 'low_GFP'
@@ -843,9 +845,10 @@ class Mir71(MicroDevice):
                             self.worm_direction = 'straight'
                             reason = 'histogram'
                             #self.clear_worms(background,True, True)
-                            worm_data = [worm_count, worm_size, gfp_amount, time_seen, self.worm_direction, reason]
+                            worm_data = [self.worm_count, worm_size, gfp_amount, time_seen, self.worm_direction, reason]
                             self.write_csv_line(histogram_csv, worm_data)
                             break
+                        
                         else:
                             detected_image = current_image
                             #9 --> 1
