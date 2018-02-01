@@ -2,11 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue May 16 12:32:55 2017
-
 @author: Tim
-
 Code to sort Wild Type, Red fluorescent, and Green fluorescent worms
-
 """
 
 import iotool
@@ -19,6 +16,7 @@ import backgroundSubtraction
 import freeimage
 import threading
 import csv
+import requests
 #import IPython
 #import prompt_toolkit
 
@@ -37,6 +35,7 @@ FLUORESCENT_AREA = (slice(500,1100), slice(530, 590))
 #STRAIGHT_PUSHER_CHANNEL_AREA = (slice(70,30),slice(350,500))
 #BOTTOM_PUSHER_CHANNEL_AREA = (slice(580,830), slice(780,1030))
 #BUBBLE_AREA = (slice(800,1000),slice(376,500))
+#Textbetl key 08a7e7d3335d92542dfec857461cfb14af5e0805HQINVtRpVqvDjo9O2wa2I6tTo
 
 FLUOR_PIXEL_BRIGHT_VALUE = 500
 DETECTION_THRES = 4
@@ -53,7 +52,7 @@ CLOG_THRESH = 10
 FLUORESCENCE_PERCENTILE = 99
 BACKGROUND_FRACTION = .99 #For Setting worm mask
 
-CYAN_EXPOSURE_TIME = 50 # changed recently 10/19 for better differentiation of signal
+CYAN_EXPOSURE_TIME = 10  #7 for lin-4, 10 for mir-71?
 YELLOW_EXPOSURE_TIME = 8
 BRIGHT_FIELD_EXPOSURE_TIME = 2
 
@@ -216,16 +215,19 @@ class MicroDevice(threading.Thread):
         if direction == 'up':
             self.device.execute(SEWER_CHANNEL_PRESSURE, UP_CHANNEL_SUCK ,PUSH_CHANNEL_STATIC)
             if self.check_cleared(background):
+                self.reset = False
                 time.sleep(SORTING_INTERVAL)
                 self.device.execute(UP_CHANNEL_PRESSURE)
         elif direction == 'down':
             self.device.execute(SEWER_CHANNEL_PRESSURE, DOWN_CHANNEL_SUCK, PUSH_CHANNEL_STATIC)
             if self.check_cleared(background):
+                self.reset = False
                 time.sleep(SORTING_INTERVAL)
                 self.device.execute(DOWN_CHANNEL_PRESSURE)
         elif direction == 'straight':
             self.device.execute(SEWER_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_SUCK, PUSH_CHANNEL_STATIC)
             if self.check_cleared(background):
+                self.reset = False
                 time.sleep(SORTING_INTERVAL)
                 self.device.execute(STRAIGHT_CHANNEL_PRESSURE)
             
@@ -437,24 +439,29 @@ class MicroDevice(threading.Thread):
             pass
     """
 
-    def check_cleared(self, background):
-        try:
-            while True:
-                current_image = self.capture_image(self.bright)
-                sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
-                if numpy.sum(sorted_worm_difference) < CLEARING_THRES * self.clear_background:
-                    print('Worm determined cleared')
-                    return True
-                else:
-                    self.device.execute(PUSH_CHANNEL_PRESSURE)
-                    self.device.execute(SEWER_CHANNEL_PRESSURE)
-                    print('still pushing')
-        except KeyboardInterrupt:   #Use if stuck in loop, or if background reset required
-            background = self.capture_image(self.bright)
-            self.save_image(background, 'new_background')
-            self.set_background_areas()
-            print('resetting backgrounds')
-            time.sleep(1)
+    def check_cleared(self, background, self.worm_count):
+        time_clear_start = time.time()
+        message_sent = False
+        while not self.reset:
+            current_image = self.capture_image(self.bright)
+            sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
+            if numpy.sum(sorted_worm_difference) < CLEARING_THRES * self.clear_background:
+                print('Worm determined cleared')
+                return True
+            else:
+                self.device.execute(PUSH_CHANNEL_PRESSURE)
+                self.device.execute(SEWER_CHANNEL_PRESSURE)
+                print('still pushing')
+                time_stuck = time.time()
+                if time_stuck - time_clear_start > 60 and message_sent == False:
+                    self.requests.post('https://textbelt.com/text',
+                                       {'phone': '6019538192',
+                                        'message': 'Sorter stuck trying to clear',
+                                        'key': '08a7e7d3335d92542dfec857461cfb14af5e0805HQINVtRpVqvDjo9O2wa2I6tTo'})
+                    message_sent = True
+
+        if self.reset == True: #Use if stuck in loop, or if background reset required
+            self.reset_background(self.worm_count)
             return True
 
 
@@ -463,6 +470,14 @@ class MicroDevice(threading.Thread):
                     UP_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_SUCK,
                     DOWN_CHANNEL_PRESSURE)
         time.sleep(1)
+        
+    def reset_background(self, self.worm_count):
+        background = self.capture_image(self.bright)
+        self.save_image(background, 'new_background_worm_'+str(self.worm_count))
+        self.set_background_areas()
+        print('resetting backgrounds')
+        time.sleep(1)
+        
         
     
     
@@ -493,10 +508,12 @@ class MicroDevice(threading.Thread):
         self.set_background_areas()
         print('setting backgrounds')
         time.sleep(1)
+        self.reset = False
         
         #1 Loading Worms
         self.device_start_load()
         time_start = time.time()
+        message_sent = False
         
         #2 Detect Worms
         time_between_worms = list()
@@ -511,6 +528,14 @@ class MicroDevice(threading.Thread):
                     time.sleep(.05)
                     
                 cycle_count += 1
+                time_without_worm = time.time()
+                if time_witout_worm - time_seen > 120 and message_sent == False:
+                    self.requests.post('https://textbelt.com/text',
+                                       {'phone': '6019538192',
+                                        'message': 'No worms for 2 min',
+                                        'key': '08a7e7d3335d92542dfec857461cfb14af5e0805HQINVtRpVqvDjo9O2wa2I6tTo'})
+                    message_sent = True
+                    
                 current_image = self.capture_image(self.bright)
                 if self.detect_worms(current_image, background):
                     print(' ')
@@ -606,6 +631,9 @@ class MicroDevice(threading.Thread):
                         else:
                             detected_image = current_image
                         #9 --> 1
+                        
+                    if self.worm_count % 100 == 0:  #Periodically resets background
+                        self.reset_background(self.worm_count)     #Need to make sure this is not happening while a worm is in view
                         
                     self.device_start_load()
                     
@@ -755,6 +783,7 @@ class Mir71(MicroDevice):
         self.worm_count = 0
         cycle_count= 0
         time_start = time.time()
+        self.reset = False
         try:
             while True:
                 cycle_count += 1
@@ -897,7 +926,7 @@ class Mir71(MicroDevice):
             histogram_csv.close()
 
                             
-    def analyze(self, background, worm_image=False, calibration=False):
+    def analyze(self, background, worm_image=False, calibration=False):     #TODO: add in autofluorescence measurements
 
         gfp_fluor_image = self.capture_image(self.cyan)
         gfp_subtracted = abs(gfp_fluor_image.astype('int32')- self.cyan_background.astype('int32'))
@@ -1212,4 +1241,4 @@ class FluorRedGreen(MicroDevice):
             self.device_sort('straight', background)
             self.worm_direction = 'straight'
             self.summary_statistics.write("Straight\n")
-            print('Worm sorted Straight')     
+            print('Worm sorted Straight') 
