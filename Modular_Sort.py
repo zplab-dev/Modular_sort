@@ -52,7 +52,7 @@ CLOG_THRESH = 10
 FLUORESCENCE_PERCENTILE = 99
 BACKGROUND_FRACTION = .99 #For Setting worm mask
 
-CYAN_EXPOSURE_TIME = 50  #7 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 7  #7 for lin-4, 50 for mir-71?
 YELLOW_EXPOSURE_TIME = 8
 BRIGHT_FIELD_EXPOSURE_TIME = 2
 
@@ -118,12 +118,14 @@ class MicroDevice(threading.Thread):
         self.file_location = Path(exp_direct)
         self.file_location.mkdir(mode=0o777, parents=True, exist_ok=True)
         self.date = exp_direct.split('/')[-1]
+        
         self.summary_location = self.file_location.joinpath('summary_' + self.date + '.txt')
         self.summary_statistics = open(str(self.summary_location),'w')
-        summary_csv_location = self.file_location.joinpath('summary_csv' + self.date + '.csv')   #TODO: change to .csv, fix path/writing
-        summary_csv = open(str(summary_csv_location), 'w')
-        header = ['worm_number', 'size', 'fluorescence', 'time', 'direction'] #TODO: add reason and such
-        summary_csv.write(','.join(header) + '\n')
+        
+        #summary_csv_location = self.file_location.joinpath('summary_csv' + self.date + '.csv')   #TODO: change to .csv, fix path/writing
+        #self.summary_csv = open(str(summary_csv_location), 'w')
+        #header = ['worm_number', 'size', 'fluorescence', 'time', 'direction'] #TODO: add reason and such
+        #self.summary_csv.write(','.join(header) + '\n')
 
         #self.data_location = self.file_location.joinpath('wormdata.csv')   #old data saving, never implemented
 
@@ -469,7 +471,7 @@ class MicroDevice(threading.Thread):
     def reset_background(self, worm_count):
         background = self.capture_image(self.bright)
         self.save_image(background, 'new_background_worm_', worm_count)
-        self.set_background_areas()
+        self.set_background_areas(worm_count)
         print('resetting backgrounds')
         time.sleep(1)
 
@@ -493,6 +495,10 @@ class MicroDevice(threading.Thread):
         #8 move worms
         #9 --> 1
         """
+        self.summary_csv_location = self.file_location.joinpath('summary_csv' + self.date + '.txt')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'fluorescence', 'time', 'direction']
+        self.summary_csv.write(','.join(header) + '\n')
 
         self.scope.camera.start_image_sequence_acquisition(
             frame_count=None, trigger_mode='Software')
@@ -504,7 +510,7 @@ class MicroDevice(threading.Thread):
         #0 Setting Background
         background = self.capture_image(self.bright)
         self.save_image(background, 'background', worm_count)
-        self.set_background_areas()
+        self.set_background_areas(worm_count)
         print('setting backgrounds')
         time.sleep(1)
         self.reset = False
@@ -529,6 +535,7 @@ class MicroDevice(threading.Thread):
 
                 cycle_count += 1
                 time_without_worm = time.time()
+                
                 if time_without_worm - time_seen > 120 and message_sent == False:
                     self.send_text(message='No worm for 2 min')
                     print('Warning sent: No worm')
@@ -541,7 +548,7 @@ class MicroDevice(threading.Thread):
                     print('Worm has been detected')
                     message_sent = False
                     #Worm is detected because of a significant change from background.
-                    time_seen = time.time() - time_start
+                    time_seen = time.time()
                     detected_image = current_image
 
                     #3 stop worms
@@ -589,7 +596,7 @@ class MicroDevice(threading.Thread):
                             #self.worm_data.append(worm_count)
                             #self.worm_data.append(worm_size)
                             time_positioned = time.time()
-                            time_between_worms.append(time_seen)
+                            time_between_worms.append(time_seen - time_start)
                             time_to_position_worms.append(time_positioned - time_seen)
                             self.summary_statistics.write('\n' + str(worm_count)
                                                           + "\nTime Between Worms: "
@@ -627,15 +634,17 @@ class MicroDevice(threading.Thread):
                             self.summary_statistics.write("Time to Sorted: "
                                                           + "{:10.5}".format(str(time_sorted - time_positioned))
                                                           + "\n")
+                            
+                            time_between = time_seen - time_start
 
-                            worm_data = [worm_count, worm_size, gfp_amount, time_seen, self.worm_direction]     #TODO: Add in 'reason'+measurements for worms that are rejected (e.g. for too small, doubled, etc.)
-                            self.write_csv_line(summary_csv, worm_data)
+                            worm_data = [worm_count, worm_size, gfp_amount, time_between, self.worm_direction]     #TODO: Add in 'reason'+measurements for worms that are rejected (e.g. for too small, doubled, etc.)
+                            self.write_csv_line(self.summary_csv, worm_data)
                             break
                         else:
                             detected_image = current_image
                         #9 --> 1
 
-                    if worm_count % 100 == 0:  #Periodically resets background
+                    if worm_count % 100 == 0 and worm_count != 0:  #Periodically resets background
                         self.reset_background(worm_count)     #Need to make sure this is not happening while a worm is in view
 
                     self.device_start_load()
@@ -728,7 +737,7 @@ class Alternate(MicroDevice):
 
 class Mir71(MicroDevice):
 
-    def set_background_areas(self):
+    def set_background_areas(self, worm_count):
         """
         Function that sets the background values for areas of interest in an
         list of numpy arrays
@@ -773,7 +782,7 @@ class Mir71(MicroDevice):
         background = self.capture_image(self.bright)
         self.boiler = boiler()
         self.save_image(background, 'calibration_background', worm_count)
-        self.set_background_areas()
+        self.set_background_areas(worm_count)
         print('setting backgrounds')
         time.sleep(1)
         self.size = list()
@@ -929,7 +938,7 @@ class Mir71(MicroDevice):
             histogram_csv.close()
 
 
-    def analyze(self, background, worm_image, worm_count, calibration=False):     #TODO: add in autofluorescence measurements
+    def analyze(self, background, worm_image, worm_count, calibration=False):     #TODO: add in autofluorescence            measurements & repeated fluor imaging to test for inter-image variance...
 
         gfp_fluor_image = self.capture_image(self.cyan)
         gfp_subtracted = abs(gfp_fluor_image.astype('int32')- self.cyan_background.astype('int32'))
