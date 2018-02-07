@@ -120,7 +120,7 @@ class MicroDevice(threading.Thread):
         self.date = exp_direct.split('/')[-1]
         self.summary_location = self.file_location.joinpath('summary_' + self.date + '.txt')
         self.summary_statistics = open(str(self.summary_location),'w')
-        summary_csv_location = self.file_location.joinpath('summary_csv.txt')   #TODO: change to .csv, fix path/writing
+        summary_csv_location = self.file_location.joinpath('summary_csv.csv')   #TODO: change to .csv, fix path/writing
         summary_csv = open(str(summary_csv_location), 'w')
         header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'reason']
         summary_csv.write(','.join(header) + '\n')
@@ -309,13 +309,9 @@ class MicroDevice(threading.Thread):
         self.scope.camera.send_software_trigger()
         return self.scope.camera.next_image()
         
-    def save_image(self, image, name, worm_count=False):
-        if worm_count:
-            save_location = str(self.file_location) + '/' + name + '_' + str(worm_count) + '.png'
-            freeimage.write(image, save_location, flags=freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
-        else:
-            save_location = str(self.file_location) + '/' + name + '.png'
-            freeimage.write(image, save_location, flags=freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
+    def save_image(self, image, name, worm_count):
+        save_location = str(self.file_location) + '/' + name + '_' + str(worm_count) + '.png'
+        freeimage.write(image, save_location, flags=freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
         
     def set_background_areas(self):
         """
@@ -472,7 +468,7 @@ class MicroDevice(threading.Thread):
         
     def reset_background(self, worm_count):
         background = self.capture_image(self.bright)
-        self.save_image(background, 'new_background_worm_'+str(worm_count))
+        self.save_image(background, 'new_background_worm_', worm_count)
         self.set_background_areas()
         print('resetting backgrounds')
         time.sleep(1)
@@ -507,7 +503,7 @@ class MicroDevice(threading.Thread):
         
         #0 Setting Background
         background = self.capture_image(self.bright)
-        self.save_image(background, 'background')
+        self.save_image(background, 'background', worm_count)
         self.set_background_areas()
         print('setting backgrounds')
         time.sleep(1)
@@ -545,7 +541,7 @@ class MicroDevice(threading.Thread):
                     print('Worm has been detected')
                     message_sent = False
                     #Worm is detected because of a significant change from background.
-                    time_seen = time.time()
+                    time_seen = time.time() - time_start
                     detected_image = current_image
                     
                     #3 stop worms
@@ -569,20 +565,22 @@ class MicroDevice(threading.Thread):
                             print('Size of worm before sorting: ' + str(worm_size))
                             if worm_size > self.size_threshold:
                                 print('Detected Double Worm')
-                                self.save_image(current_image, 'doubled worm_analyze', True)
+                                self.save_image(current_image, 'doubled worm_analyze', worm_count)
                                 self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size)) 
                                 self.device_sort('straight', background, worm_count)
                                 self.worm_direction = 'straight'
+                                self.reason = 'double_worm'
                                 self.summary_statistics.write("Straight\n")
                                 print('Doubled worms sorted Straight')
                                 time.sleep(0.5)
                                 break
                             elif worm_size < self.min_worm_size:
                                 print('Detected small worm')
-                                self.save_image(current_image, 'small worm_analyze', True)
+                                self.save_image(current_image, 'small worm_analyze', worm_count)
                                 self.summary_statistics.write( '\n small worm size of: ' + str(worm_size))
                                 self.device_sort('straight', background, worm_count)
                                 self.worm_direction = 'straight'
+                                self.reason = 'small_worm'
                                 self.summary_statistics.write('Straight\n')
                                 time.sleep(0.5)
                                 break
@@ -591,33 +589,31 @@ class MicroDevice(threading.Thread):
                             #self.worm_data.append(worm_count)
                             #self.worm_data.append(worm_size)
                             time_positioned = time.time()
-                            time_between_worms.append(time_seen - time_start)
+                            time_between_worms.append(time_seen)
                             time_to_position_worms.append(time_positioned - time_seen)
                             self.summary_statistics.write('\n' + str(worm_count) 
                                                           + "\nTime Between Worms: " 
                                                           + "{:10.5}".format(str(time_seen - time_start)) 
-                                                          + "\nTime to Positioning: " 
-                                                          + "{:10.5}".format(str(time_positioned - time_seen)) 
                                                           + "\n Worm size = :"
                                                           + str(worm_size) 
                                                           + '\n')
-                            time_start = time_seen
+                            #time_start = time_seen
                             print('Worm has been positioned')
                             
                             #5 save worm image 
                             
-                            self.save_image(current_image, 'position', True)
+                            self.save_image(current_image, 'position', worm_count)
                             #self.save_image(difference_between_worm_background.astype('uint16'), 'worm_subtracted', True)
                             print('Images saved')
                             
                             #6/7 analyze worms/sort  
-                            self.analyze(background, current_image, worm_count, calibration = False)
+                            gfp_amount, self.worm_direction = self.analyze(background, current_image, worm_count, calibration = False)
                             print('Worms analyzed and sorted')
                             print('Worm number: ' + str(worm_count))
                             
                             #8 move worms
                             #self.clear_worms(background)                #Under construction
-                            if self.cleared:
+                            if self.cleared:                             # Not sure this is doing anything
                                 self.device.execute(SEWER_CHANNEL_PRESSURE, UP_CHANNEL_PRESSURE, 
                                                     STRAIGHT_CHANNEL_PRESSURE,DOWN_CHANNEL_PRESSURE)
                                 time.sleep(2)
@@ -625,11 +621,15 @@ class MicroDevice(threading.Thread):
                                 self.save_image(background, 'background' + str(worm_count))
                                 self.set_background_areas()
                                 print('Reset background')
+
                             print('Sorted')
                             time_sorted = time.time()
                             self.summary_statistics.write("Time to Sorted: " 
                                                           + "{:10.5}".format(str(time_sorted - time_positioned))
                                                           + "\n")
+
+                            worm_data = [worm_count, worm_size, gfp_amount, time_seen, self.worm_direction]     #TODO: Add in 'reason'+measurements for worms that are rejected (e.g. for too small, doubled, etc.)
+                            self.write_csv_line(summary_csv, worm_data)
                             break
                         else:
                             detected_image = current_image
@@ -742,7 +742,7 @@ class Mir71(MicroDevice):
         self.clear_background = numpy.sum(subtracted[CLEARING_AREA])
         
         self.cyan_background = self.capture_image(self.cyan)
-        self.save_image(self.cyan_background, 'cyan_background')
+        self.save_image(self.cyan_background, 'cyan_background', worm_count)
 
         self.lamp_off()
         self.scope.tl.lamp.enabled = True
@@ -769,9 +769,10 @@ class Mir71(MicroDevice):
         header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'reason']
         histogram_csv.write(','.join(header) + '\n')
 
+        worm_count = 0
         background = self.capture_image(self.bright)
         self.boiler = boiler()
-        self.save_image(background, 'calibration_background')
+        self.save_image(background, 'calibration_background', worm_count)
         self.set_background_areas()
         print('setting backgrounds')
         time.sleep(1)
@@ -783,7 +784,6 @@ class Mir71(MicroDevice):
         initial_max_size = 8000
         initial_min_size = 3500
         
-        worm_count = 0
         cycle_count= 0
         time_start = time.time()
         self.reset = False
@@ -847,7 +847,7 @@ class Mir71(MicroDevice):
 
                             #self.save_image(worm_mask.astpye('int32'), 'calibration_worm_mask' + str(worm_count))
                             #self.save_image(current_image, 'calibration_worm'+ str(worm_count))
-                            self.save_image(current_image, 'calibration_worm', True)
+                            self.save_image(current_image, 'calibration_worm', worm_count)
                             print('images_saved')
                             
                             #CYAN
@@ -940,13 +940,13 @@ class Mir71(MicroDevice):
         print('GFP value = ' + str(worm_fluor))
         
         if calibration:
-            self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', True)
-            self.save_image(gfp_fluor_image, 'calibration_worm_fluor', True)
+            self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', worm_count)
+            self.save_image(gfp_fluor_image, 'calibration_worm_fluor', worm_count)
             return worm_fluor
 
         if not calibration:
-            self.save_image(worm_mask.astype('uint16'), 'worm_mask', True)
-            self.save_image(gfp_fluor_image, 'fluor_gfp', True)
+            self.save_image(worm_mask.astype('uint16'), 'worm_mask', worm_count)
+            self.save_image(gfp_fluor_image, 'fluor_gfp', worm_count)
             self.summary_statistics.write("Gfp Fluorescence: " + str(worm_fluor))
 
             after_image = self.capture_image(self.bright)
@@ -957,7 +957,7 @@ class Mir71(MicroDevice):
             if worm_size_2 > self.size_threshold:
                 worm_count -= 1
                 print('Detected Double Worm')
-                self.save_image(after_image, 'doubled worm_analyze', True)
+                self.save_image(after_image, 'doubled worm_analyze', worm_count)
                 self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size_2)) 
                 self.device_sort('straight', background, worm_count)
                 self.worm_direction = 'straight'
@@ -967,7 +967,7 @@ class Mir71(MicroDevice):
             elif worm_size_2 < self.min_worm_size:
                 worm_count -= 1
                 print('Detected small worm')
-                self.save_image(after_image, 'small worm_analyze', True)
+                self.save_image(after_image, 'small worm_analyze', worm_count)
                 self.summary_statistics.write( '\n small worm size of: ' + str(worm_size_2))
                 self.device_sort('straight', background, worm_count)
                 self.worm_direction = 'straight'
@@ -992,10 +992,9 @@ class Mir71(MicroDevice):
                 self.worm_direction = 'straight'
                 self.summary_statistics.write("straight\n")
                 print('Worm sorted straight    ' + str(self.straight))
+
+            return worm_fluor, self.worm_direction
             
-    
-            
-        
     def find_fluor_amount(self, subtracted_image, worm_mask):
         gfp_image = subtracted_image[worm_mask]
         gfp_count = numpy.percentile(gfp_image, 95)
