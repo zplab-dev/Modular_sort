@@ -369,9 +369,9 @@ class MicroDevice(threading.Thread):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         worm_count = 0
-        self.up = 0
-        self.down = 0
-        self.straight = 0
+        up_count = 0
+        down_count = 0
+        straight_count = 0
         cycle_count = 0
         self.boiler = boiler()
         self.reset = False
@@ -406,6 +406,7 @@ class MicroDevice(threading.Thread):
                     print(' ')
                     print('Worm has been detected')
                     time_seen = time.time()
+                    time_between_worms = time_seen - time_start
                     detected_image = current_image
 
                     #3 Stop worms
@@ -421,6 +422,62 @@ class MicroDevice(threading.Thread):
                             break
                         elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
                             #Maybe include some param that says if a worm is too close to the edge, let it get to the center 
+                            difference_between_worm_background = (abs(current_image.astype('int32') - background.astype('int32')))
+                            worm_size = self.size_of_worm(difference_between_worm_background)
+                            print('Size of worm before sorting: ' + str(worm_size))
+                            check_size(worm_size)
+                            if worm_size > self.size_threshold:     #TODO: think on how to better decide size thresholds
+                                print('Detected Double Worm')
+                                self.save_image(current_image, 'doubled worm_analyze', worm_count)
+                                self.device_sort('straight', background, worm_count)
+                                direction = 'straight'
+                                self.reason = 'double_worm'
+                                print('Doubled worms sorted Straight')
+                                time.sleep(0.5)
+                                break
+                            elif worm_size < self.min_worm_size:     #TODO: look back and decide if problem
+                                print('Detected small worm')
+                                self.save_image(current_image, 'small worm_analyze', worm_count)
+                                self.device_sort('straight', background, worm_count)
+                                direction = 'straight'
+                                self.reason = 'small_worm'
+                                time.sleep(0.5)
+                                break
+                            worm_count += 1
+                            print('Worm positioned')
+
+                            #5 Save image
+                            self.save_image(current_image, 'positioned', worm_count)    #TODO: better names?
+                            print('Image saved')
+
+                            #6 Analyze worms
+                            sort_param, direction = self.analyze(background, current_image, worm_count, calibration = False)
+
+                            #Second size check to make sure new worms haven't shown up 
+                            #TODO: can probably put this in function
+                            post_analysis_image = self.capture_image(self.bright)
+                            difference_between_worm_background = (abs(post_analysis_image.astype('int32') - background.astype('int32')))
+                            worm_size_2 = self.size_of_worm(difference_between_worm_background)
+                            print('Size of worm after analysis: ' + str(worm_size_2))
+                            if worm_size_2 > self.size_threshold:
+                                print('Detected Double Worm')
+                                self.save_image(current_image, 'doubled worm_analyze', worm_count)
+                                self.device_sort('straight', background, worm_count)
+                                direction = 'straight'
+                                self.reason = 'double_worm'
+                                print('Doubled worms sorted Straight')
+                                time.sleep(0.5)
+                                break
+                            elif worm_size_2 < self.min_worm_size:
+                                print('Worm was lost')
+                                self.save_image(current_image, 'small worm_analyze', worm_count)
+                                self.device_sort('straight', background, worm_count)
+                                direction = 'straight'
+                                self.reason = 'small_worm'
+                                time.sleep(0.5)
+                                break
+                            self.device_sort(direction, background, worm_count)
+                            
 
     """
     Some pseudocode:
@@ -432,9 +489,6 @@ class MicroDevice(threading.Thread):
         save_data()     #Should also be class-specific, as params saved change from case to case
             #Does this mean that if sort exits badly data can't be saved? Does data have to be saved continuously?
     """
-
-
-
 
 class GFP(MicroDevice):
 
@@ -456,4 +510,38 @@ class GFP(MicroDevice):
         self.bottom_mir71_threshold = int(input('Lower threshold = '))
         self.size_threshold = int(input('Max size threshold = '))
         self.min_worm_size = int(input('Small size threshold = '))
+
+    def analyze(self, background, worm_image, worm_count, calibration=False):
+        """Class-specific method to determine measurement being sorted.
+        Takes background image, bf image of worm, worm count, and returns measurement + sort direction
+        Saves fluorescent (GFP) image
+        """
+        gfp_fluor_image = self.capture_image(self.cyan)
+        gfp_subtracted = abs(gfp_fluor_image.astype('int32')- self.cyan_background.astype('int32'))
+        worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
+        worm_mask = self.worm_mask(worm_subtracted).astype('bool')      #Old function returned as bool automatically, see if bool works with size-finding
+
+        worm_fluor = self.find_fluor_amount(gfp_subtracted, worm_mask)
+        print('GFP value = ' + str(worm_fluor))
+
+        if calibration:
+            self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', worm_count)
+            self.save_image(gfp_fluor_image, 'calibration_worm_fluor', worm_count)
+            return worm_fluor
+
+        if not calibration:
+            self.save_image(worm_mask.astype('uint16'), 'worm_mask', worm_count)
+            self.save_image(gfp_fluor_image, 'fluor_gfp', worm_count)
+
+            if worm_fluor >= self.upper_GFP_threshold:
+                direction = 'up'
+            elif worm_fluor <= self.lower_GFP_threshold:
+                direction = 'down'
+            else:
+                direction = 'straight'
+
+        return worm_fluor, direction
+
+
+
 
