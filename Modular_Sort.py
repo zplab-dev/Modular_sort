@@ -639,6 +639,8 @@ class MicroDevice(threading.Thread):
 
                             worm_data = [worm_count, worm_size, gfp_amount, time_between, self.worm_direction]     #TODO: Add in 'reason'+measurements for worms that are rejected (e.g. for too small, doubled, etc.)
                             self.write_csv_line(self.summary_csv, worm_data)
+                            self.update_hist(gfp_amount)
+                            print(upper_mir71_threshold, bottom_mir71_threshold)
                             break
                         else:
                             detected_image = current_image
@@ -1010,6 +1012,11 @@ class Mir71(MicroDevice):
         gfp_image = subtracted_image[worm_mask]
         gfp_count = numpy.percentile(gfp_image, 95)
         return gfp_count
+
+    def update_hist(self, fluor_amount):
+        self.fluorescence.append(fluor_amount)
+        upper_mir71_threshold = numpy.percentile(self.fluorescence, 90)
+        bottom_mir71_threshold = numpy.percentile(self.fluorescnece, 10)
 
 
 class FluorRedGreen(MicroDevice):
