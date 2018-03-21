@@ -119,8 +119,8 @@ class MicroDevice(threading.Thread):
         self.file_location.mkdir(mode=0o777, parents=True, exist_ok=True)
         self.date = exp_direct.split('/')[-1]
         
-        self.summary_location = self.file_location.joinpath('summary_' + self.date + '.txt')
-        self.summary_statistics = open(str(self.summary_location),'w')
+        #self.summary_location = self.file_location.joinpath('summary_' + self.date + '.txt')
+        #self.summary_statistics = open(str(self.summary_location),'w')
         
         #summary_csv_location = self.file_location.joinpath('summary_csv' + self.date + '.csv')   #TODO: change to .csv, fix path/writing
         #self.summary_csv = open(str(summary_csv_location), 'w')
@@ -564,7 +564,7 @@ class MicroDevice(threading.Thread):
                             print('Worm has been lost')
                             self.device.execute(SEWER_CHANNEL_PRESSURE)
                             time.sleep(.1)
-                            self.summary_statistics.write("\nWorm " + str(worm_count) + "was lost")
+                            #self.summary_statistics.write("\nWorm " + str(worm_count) + "was lost")
                             break
                         elif self.positioned_worm(current_image, detected_image):
                             difference_between_worm_background = (abs(current_image.astype('int32') - background.astype('int32')))
@@ -573,22 +573,22 @@ class MicroDevice(threading.Thread):
                             if worm_size > self.size_threshold:
                                 print('Detected Double Worm')
                                 self.save_image(current_image, 'doubled worm_analyze', worm_count)
-                                self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size))
+                                #self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size))
                                 self.device_sort('straight', background, worm_count)
                                 self.worm_direction = 'straight'
                                 self.reason = 'double_worm'
-                                self.summary_statistics.write("Straight\n")
+                                #self.summary_statistics.write("Straight\n")
                                 print('Doubled worms sorted Straight')
                                 time.sleep(0.5)
                                 break
                             elif worm_size < self.min_worm_size:
                                 print('Detected small worm')
                                 self.save_image(current_image, 'small worm_analyze', worm_count)
-                                self.summary_statistics.write( '\n small worm size of: ' + str(worm_size))
+                                #self.summary_statistics.write( '\n small worm size of: ' + str(worm_size))
                                 self.device_sort('straight', background, worm_count)
                                 self.worm_direction = 'straight'
                                 self.reason = 'small_worm'
-                                self.summary_statistics.write('Straight\n')
+                                #self.summary_statistics.write('Straight\n')
                                 time.sleep(0.5)
                                 break
                             worm_count += 1
@@ -598,12 +598,12 @@ class MicroDevice(threading.Thread):
                             time_positioned = time.time()
                             time_between_worms.append(time_seen - time_start)
                             time_to_position_worms.append(time_positioned - time_seen)
-                            self.summary_statistics.write('\n' + str(worm_count)
-                                                          + "\nTime Between Worms: "
-                                                          + "{:10.5}".format(str(time_seen - time_start))
-                                                          + "\n Worm size = :"
-                                                          + str(worm_size)
-                                                          + '\n')
+                            #self.summary_statistics.write('\n' + str(worm_count)
+                             #                             + "\nTime Between Worms: "
+                              #                            + "{:10.5}".format(str(time_seen - time_start))
+                               #                           + "\n Worm size = :"
+                                #                          + str(worm_size)
+                                 #                         + '\n')
                             #time_start = time_seen
                             print('Worm has been positioned')
 
@@ -631,9 +631,9 @@ class MicroDevice(threading.Thread):
 
                             print('Sorted')
                             time_sorted = time.time()
-                            self.summary_statistics.write("Time to Sorted: "
-                                                          + "{:10.5}".format(str(time_sorted - time_positioned))
-                                                          + "\n")
+                            #self.summary_statistics.write("Time to Sorted: "
+                             #                             + "{:10.5}".format(str(time_sorted - time_positioned))
+                              #                            + "\n")
                             
                             time_between = time_seen - time_start
 
@@ -669,13 +669,13 @@ class MicroDevice(threading.Thread):
         except KeyboardInterrupt:
             pass
         finally:
-            self.summary_statistics.write('\n Average worm detection time :'
-                                          + str(numpy.mean(time_between_worms))
-                                          + '\n Average worm positioning time :'
-                                          + str(numpy.mean(time_to_position_worms)))
+            #self.summary_statistics.write('\n Average worm detection time :'
+             #                             + str(numpy.mean(time_between_worms))
+              #                            + '\n Average worm positioning time :'
+               #                           + str(numpy.mean(time_to_position_worms)))
             self.device_stop_run()
             print('fianlly went')
-            self.summary_statistics.close()
+            #self.summary_statistics.close()
 
 
     def main(self):
@@ -771,10 +771,10 @@ class Mir71(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None,
                                                            trigger_mode='Software')
 
-        self.histogram_values_location = self.file_location.joinpath('histogram' + self.date + '.txt')
-        self.histogram_values = open(str(self.histogram_values_location),'w')
-        csv_location = self.file_location.joinpath('histogram_csv' + self.date + '.txt')
-        histogram_csv = open(str(csv_location), 'w')
+        #self.histogram_values_location = self.file_location.joinpath('histogram' + self.date + '.txt')
+        #self.histogram_values = open(str(self.histogram_values_location),'w')
+        histogram_csv_location = self.file_location.joinpath('histogram' + self.date + '.csv')
+        histogram_csv = open(str(histogram_csv_location), 'w')
         header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'reason']
         histogram_csv.write(','.join(header) + '\n')
 
@@ -791,7 +791,7 @@ class Mir71(MicroDevice):
         #initial_max_size = int(input('Initial size threshold: '))
         #initial_min_size = int(input('Initial min size threshold: '))
         initial_max_size = 8000
-        initial_min_size = 3500
+        initial_min_size = 3400
 
         cycle_count= 0
         time_start = time.time()
@@ -921,7 +921,7 @@ class Mir71(MicroDevice):
             print('Avg Size =' + str(avg_size))
             print('90_size =' + str(size_90))
             print('10_size =' + str(size_10))
-
+            """
             self.histogram_values.write('Fluorescence list = '+ str(self.fluorescence)
                                         +' based off of '+ str(len(self.fluorescence))+ ' worms'
                                         +'\n Avg GFP = '+ str(avg_gfp)
@@ -935,6 +935,7 @@ class Mir71(MicroDevice):
                                         )
 
             self.histogram_values.close()
+            """
             histogram_csv.close()
 
 
@@ -956,7 +957,7 @@ class Mir71(MicroDevice):
         if not calibration:
             self.save_image(worm_mask.astype('uint16'), 'worm_mask', worm_count)
             self.save_image(gfp_fluor_image, 'fluor_gfp', worm_count)
-            self.summary_statistics.write("Gfp Fluorescence: " + str(worm_fluor))
+            #self.summary_statistics.write("Gfp Fluorescence: " + str(worm_fluor))
 
             after_image = self.capture_image(self.bright)
             difference_between_worm_background = (abs(after_image.astype('int32') - background.astype('int32')))
@@ -967,41 +968,42 @@ class Mir71(MicroDevice):
                 worm_count -= 1
                 print('Detected Double Worm')
                 self.save_image(after_image, 'doubled worm_analyze', worm_count)
-                self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size_2))
+                #self.summary_statistics.write( '\n doubled worm size of: '+ str(worm_size_2))
                 self.device_sort('straight', background, worm_count)
                 self.worm_direction = 'straight'
                 reason = 'New_worm'
-                self.summary_statistics.write("Straight\n")
+                #self.summary_statistics.write("Straight\n")
                 print('Doubled worms sorted Straight')
             elif worm_size_2 < self.min_worm_size:
                 worm_count -= 1
                 print('Detected small worm')
                 self.save_image(after_image, 'small worm_analyze', worm_count)
-                self.summary_statistics.write( '\n small worm size of: ' + str(worm_size_2))
+                #self.summary_statistics.write( '\n small worm size of: ' + str(worm_size_2))
                 self.device_sort('straight', background, worm_count)
                 self.worm_direction = 'straight'
                 reason = 'lost?'
-                self.summary_statistics.write('Straight\n')
+                #self.summary_statistics.write('Straight\n')
 
             elif worm_fluor > self.upper_mir71_threshold:
                 self.up += 1
                 self.device_sort('up', background, worm_count)
                 self.worm_direction = 'up'
-                self.summary_statistics.write("Up\n")
+                #self.summary_statistics.write("Up\n")
                 print('Worm sorted Up    ' + str(self.up))
             elif worm_fluor < self.bottom_mir71_threshold and worm_fluor > 300:
                 self.down += 1
                 self.device_sort('down', background, worm_count)
                 self.worm_direction = 'down'
-                self.summary_statistics.write("Down\n")
+                #self.summary_statistics.write("Down\n")
                 print('Worm sorted Down   ' + str(self.down))
             else:
                 self.straight += 1
                 self.device_sort('straight', background, worm_count)
                 self.worm_direction = 'straight'
-                self.summary_statistics.write("straight\n")
+                #self.summary_statistics.write("straight\n")
                 print('Worm sorted straight    ' + str(self.straight))
-
+            
+            print('Up: ' + str(self.up), ' Straight: ' + str(self.straight), ' Down: ' + str(self.down))
             return worm_fluor, self.worm_direction
 
     def find_fluor_amount(self, subtracted_image, worm_mask):
