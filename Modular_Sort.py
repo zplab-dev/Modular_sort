@@ -52,7 +52,7 @@ CLOG_THRESH = 10
 FLUORESCENCE_PERCENTILE = 99
 BACKGROUND_FRACTION = .99 #For Setting worm mask
 
-CYAN_EXPOSURE_TIME = 7  #7 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 10  #7 for lin-4, 50 for mir-71?
 YELLOW_EXPOSURE_TIME = 8
 BRIGHT_FIELD_EXPOSURE_TIME = 2
 
@@ -155,15 +155,16 @@ class MicroDevice(threading.Thread):
         self.straight = 0
         self.TIME_FOR_PUSHING = .8
         #worm_data = list()
-
-        #Pausing stuff
+        
+        #Pausing stuff, this is coded wrong here, flags should be set with specific event cues
         self.running = True
-        super().__init__(daemon=True)
+        #super().__init__(daemon=True)
         self.quitting = False
         self.cleared = False
 
         self.resume() #(testing)
-
+        
+        
     def write_csv_line(self,csv,data):
         csv.write(','.join(map(str, data)) + '\n')
 
@@ -481,7 +482,7 @@ class MicroDevice(threading.Thread):
                         'message': str(message),
                         'key':'08a7e7d3335d92542dfec857461cfb14af5e0805HQINVtRpVqvDjo9O2wa2I6tTo'})
 
-    def run(self):
+    def sort(self):     #Renamed from 'run' until threading is worked out
         """
         Function that starts the device running with a given purpose
         #0 set background
@@ -640,7 +641,6 @@ class MicroDevice(threading.Thread):
                             worm_data = [worm_count, worm_size, gfp_amount, time_between, self.worm_direction]     #TODO: Add in 'reason'+measurements for worms that are rejected (e.g. for too small, doubled, etc.)
                             self.write_csv_line(self.summary_csv, worm_data)
                             self.update_hist(gfp_amount)
-                            print(upper_mir71_threshold, bottom_mir71_threshold)
                             break
                         else:
                             detected_image = current_image
@@ -793,7 +793,7 @@ class Mir71(MicroDevice):
         #initial_max_size = int(input('Initial size threshold: '))
         #initial_min_size = int(input('Initial min size threshold: '))
         initial_max_size = 8000
-        initial_min_size = 3400
+        initial_min_size = 3100
 
         cycle_count= 0
         time_start = time.time()
@@ -1015,8 +1015,10 @@ class Mir71(MicroDevice):
 
     def update_hist(self, fluor_amount):
         self.fluorescence.append(fluor_amount)
-        upper_mir71_threshold = numpy.percentile(self.fluorescence, 90)
-        bottom_mir71_threshold = numpy.percentile(self.fluorescnece, 10)
+        self.upper_mir71_threshold = numpy.percentile(self.fluorescence, 90)
+        self.bottom_mir71_threshold = numpy.percentile(self.fluorescence, 10)
+        print(self.upper_mir71_threshold, self.bottom_mir71_threshold)
+        #Maybe print something to track how much it's changed?
 
 
 class FluorRedGreen(MicroDevice):
