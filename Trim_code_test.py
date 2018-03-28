@@ -36,7 +36,7 @@ CLEARING_THRES = 3
 LOST_CUTOFF = 1.5
 DOUBLE_THRESH = 1.3
 
-CYAN_EXPOSURE_TIME = 25  #~20 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 7  #~20 for lin-4, 50 for mir-71?
 GREEN_YELLOW_EXPOSURE_TIME = 50	#for mcherry
 
 BRIGHT_FIELD_EXPOSURE_TIME = 2
@@ -72,13 +72,12 @@ def boiler():		#TODO: Work out better way to detect worms than having set detect
     return boiler
 
 class MicroDevice(threading.Thread):
-	"""
+    """
     (Super?)class which contains basic functions for running the device, with specific methods defined below.
     """ 
-
+    
     def __init__(self, exp_direct):
-        """
-        Initalizes the scope and device 
+        """Initalizes the scope and device 
         """
         self.scope, scope_properties = scope_client.client_main()
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
@@ -209,7 +208,7 @@ class MicroDevice(threading.Thread):
         """
         raise NotImplementedError('No sorting method given')
 
-    def set_bf_background(self):        #Why does this take two images while fluor bgs only take one?
+    def set_bf_background(self, worm_count):        #Why does this take two images while fluor bgs only take one?
         """
         Function that sets the background values for areas of interest in an
         list of numpy arrays
@@ -247,6 +246,14 @@ class MicroDevice(threading.Thread):
         return ((numpy.sum(numpy.abs(current_image[DETECTION_AREA].astype('int32') 
                 - background[DETECTION_AREA].astype('int32'))) 
                 -self.detect_background) > DETECTION_THRES  * self.detect_background)
+    
+    def positioned_worm(self, current_image, detected_image):
+        """
+        Function that determines if a worm has been positioned
+        The worm is positioned because the change is small.
+        """
+        worm_movment = abs(current_image[POSITION_AREA].astype('int32') - detected_image[POSITION_AREA].astype('int32'))
+        return  ((numpy.sum(worm_movment) - self.positioned_background) < POSITION_THRES * self.positioned_background)
 
     def lost_worm(self, current_image, background):     #Probably a better way to do this
         """
@@ -264,7 +271,7 @@ class MicroDevice(threading.Thread):
         Depending on how background.backgroundSubtraction.clean_dust_and_holes(image) works this function might neeed to be modified so that it returns the appropriate image.
         Currently the clean_dust_and_holes does not return the clean image and actually modifies the passed image.
         """
-        mask = worm_mask(subtracted_image)
+        mask = self.worm_mask(subtracted_image)
         #self.save_image(floored_image.astype('uint16'), 'worm_mask', True)
         a = (-1*numpy.sum(mask))
         return (a)
@@ -355,12 +362,12 @@ class MicroDevice(threading.Thread):
         #Is there a way I could write this function here so it didn't clutter the code bellow?
         #Problem is that the bellow code is reliant on breaking the loop in the case that a worm is rejected--how to
         #return the same effect in a function?
-
+        pass
 
     def find_95th_fluor_amount(self, subtracted_image, worm_mask):
         fluor_worm = subtracted_image[worm_mask]
-        95th_count = numpy.percentile(fluor_worm, 95)
-        return 95th_count
+        fluor_95th = numpy.percentile(fluor_worm, 95)
+        return fluor_95th
 
     def find_mean_fluor_amount(self, subtracted_image, worm_mask):
         fluor_worm = subtracted_image[worm_mask]
@@ -402,9 +409,9 @@ class MicroDevice(threading.Thread):
         """
 
         worm_count = 0
-        up_count = 0
-        down_count = 0
-        straight_count = 0
+        self.up_count = 0
+        self.down_count = 0
+        self.straight_count = 0
         cycle_count = 0
 
         #1 Loading Worms
@@ -417,13 +424,13 @@ class MicroDevice(threading.Thread):
             while True:
 
                 cycle_count += 1
-
+                """
                 if calibration:
                     if worm_count >= 100:   #Better way than to hard code 100 worms? passing too many arguments?
                         print('Finished initial histogram')
                         return self.hist_values
                         break
-
+                """
                 time_without_worm = time.time()
                 if time_without_worm - time_seen > 120 and message_sent == False:
                     self.send_text(message='No worm for 2 min')
@@ -467,6 +474,7 @@ class MicroDevice(threading.Thread):
                                 break
 
                             elif worm_size < self.min_worm_size:     #TODO: look back and decide if problem
+                                                                     #Probably actually rejecting large (slow) worms here
                                 print('Detected small worm')
                                 self.save_image(current_image, 'small worm_analyze', worm_count)
                                 self.device_sort('straight', self.background, worm_count)
@@ -480,11 +488,11 @@ class MicroDevice(threading.Thread):
                                 self.save_image(current_image, 'calibration_worm', worm_count)
                                 print('Image saved')
 
-                                sort_param, directon = self.analyze(background, current_image, worm_count, calibration = True)
+                                sort_param, direction = self.analyze(self.background, current_image, worm_count, calibration = True)
                                 print('Calibration worm number: ' + str(worm_count))
 
-                                self.hist_values.append(sort_param)  #building initial histogram
-
+                                #self.hist_values.append(sort_param)  #building initial histogram
+                                #How to make this generalizable if not using a histogram?
                             elif not calibration:
                                 #5 Save image
                                 self.save_image(current_image, 'positioned', worm_count)    #TODO: better names?
@@ -501,6 +509,7 @@ class MicroDevice(threading.Thread):
                             difference_between_worm_background = (abs(post_analysis_image.astype('int32') - self.background.astype('int32')))
                             worm_size_2 = self.size_of_worm(difference_between_worm_background)
                             print('Size of worm after analysis: ' + str(worm_size_2))
+                            #Maybe instead of a second size threshold test, check if size has changed appreciably
 
                             if worm_size_2 > self.size_threshold:
                                 print('Detected Double Worm')
@@ -534,7 +543,7 @@ class MicroDevice(threading.Thread):
                                 note = 'hist'
                             elif not calibration:
                                 note = 'sort'
-                                print('Up: ' + str(up_count), ' Straight: ' + str(straight_count), ' Down: ' + str(down_count))
+                                print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
                                 self.update_hist(sort_param)
 
                             worm_data = self.generate_data(worm_count, worm_size, sort_param, time_between_worms, direction, note)
@@ -565,6 +574,8 @@ class MicroDevice(threading.Thread):
             #Close csv file?
 
     def run(self):
+        
+        print('Running from the superclass!')
 
         self.setup_csv(self.file_location, self.info)
 
@@ -575,12 +586,13 @@ class MicroDevice(threading.Thread):
         self.message_sent = False
         
         #0 Setting Background
+        worm_count = 0
         self.set_background_areas(worm_count)
         print('setting backgrounds')
         time.sleep(1)
         #input for build hist?
 
-        self.size_threhold = 7000   #hard coding sizes for now
+        self.size_threshold = 7000   #hard coding sizes for now
         self.min_worm_size = 3000
 
         self.build_hist()
@@ -766,6 +778,8 @@ class Background(MicroDevice):
         direction = 'straight'
 
         sort_param = [cyan_95th, cyan_mean, tritc_95th, tritc_mean]
+        
+        print(str(sort_param), direction)
 
         return sort_param, direction
 
@@ -776,6 +790,40 @@ class Background(MicroDevice):
         return worm_data
 
     #Need specific funciton for running worms throuhg here?
+    """
+    def nosort(self):
+        self.setup_csv(self.file_location, self.info)
+        
+        self.size_threshold = 7500   #hardcoding sizes for now
+        self.min_worm_size = 2500
+        
+        self.sort(calibration=True)
+        self.summary_csv.close()
+    """
+    
+    def nosort(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+        self.reset = False
+        self.message_sent = False
+        
+        #0 Setting Background
+        worm_count = 0
+        self.set_background_areas(worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 7500   #hard coding sizes for now
+        self.min_worm_size = 2500
+
+        self.sort(calibration = True)
+
+        self.summary_csv.close()        
 
 
 
