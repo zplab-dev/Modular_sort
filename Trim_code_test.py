@@ -481,7 +481,6 @@ class MicroDevice(threading.Thread):
                                 time.sleep(0.5)
                                 break
 
-                            worm_count += 1
                             print('Worm positioned')
 
                             if calibration:
@@ -560,6 +559,7 @@ class MicroDevice(threading.Thread):
                         #Check background pics to make sure this isn't ever taking pics with worms
 
                     self.device_start_load()
+                    worm_count += 1     #TODO: is the position of this throwing off counting?
                     #9 --> 1
 
                 elif cycle_count % PROGRESS_RATE == 0:  #Gives update every 100 cycles to let you know it's still working
