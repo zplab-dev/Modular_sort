@@ -281,7 +281,7 @@ class MicroDevice(threading.Thread):
         floored_image[self.boiler] = 0
         backgroundSubtraction.clean_dust_and_holes(floored_image)
         #return floored_image.astype('bool')
-        return floored_image
+        return floored_image.astype('bool')
 
     def analyze(self):
         """
@@ -650,6 +650,7 @@ class GFP(MicroDevice):
 
         if calibration:
             self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', worm_count)
+            #astype('uint8')*255
             self.save_image(gfp_fluor_image, 'calibration_worm_fluor', worm_count)
             direction = 'straight'
             return worm_fluor, direction
