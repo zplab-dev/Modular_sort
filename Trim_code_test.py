@@ -24,7 +24,7 @@ IMAGE_SIZE = (1280, 1080)
 BOILER_AREA = (slice(530,1100), slice(530,590))
 DETECTION_AREA = (slice(690,1100), slice(545, 575))
 POSITION_AREA = (slice(690,1000), slice(545, 575))  #Align left end of sewer corner to 690, 575
-CLEARING_AREA = (slice(530,1000), slice(530, 580)) 
+CLEARING_AREA = (slice(530,1000), slice(530, 580))
 FLUORESCENT_AREA = (slice(500,1100), slice(530, 590))
 
 #Textbelt key = 08a7e7d3335d92542dfec857461cfb14af5e0805HQINVtRpVqvDjo9O2wa2I6tTo
@@ -74,25 +74,25 @@ def boiler():		#TODO: Work out better way to detect worms than having set detect
 class MicroDevice(threading.Thread):
     """
     (Super?)class which contains basic functions for running the device, with specific methods defined below.
-    """ 
-    
+    """
+
     def __init__(self, exp_direct):
-        """Initalizes the scope and device 
+        """Initalizes the scope and device
         """
         self.scope, scope_properties = scope_client.client_main()
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
         self.scope.camera.readout_rate = '280 MHz'
         self.scope.camera.binning = '2x2'
         self.scope.tl.lamp.enabled = True
-        
+
         self.device = iotool.IOTool("/dev/ttyMicrofluidics")
-        
+
         self.file_location = Path(exp_direct)
         self.file_location.mkdir(mode=0o777, parents=True, exist_ok=True)
         self.info = exp_direct.split('/')[-1]
 
         self.device_clear_tubes()
-    
+
         #Create event flag, initially set to false
         self.running = threading.Event()
         super().__init__(daemon=True)
@@ -110,7 +110,7 @@ class MicroDevice(threading.Thread):
     def quit(self):
         print('Quiting')
         self.quitting = True
-        
+
     def clear(self):
         print('Cleared')
         self.cleared = True
@@ -118,10 +118,10 @@ class MicroDevice(threading.Thread):
     def reset(self):
         print('Reset')
         self.reset = True
-		
+
     def write_csv_line(self,csv,data):
         csv.write(','.join(map(str, data)) + '\n')
-        
+
     def set_scope(self):
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
         self.scope.camera.readout_rate = '280 MHz'
@@ -162,7 +162,7 @@ class MicroDevice(threading.Thread):
         type_of_image()
         self.scope.camera.send_software_trigger()
         return self.scope.camera.next_image()
-            
+
     def device_stop_run(self):
         """
         Command that stops the device from sorting or loading worm.
@@ -172,10 +172,10 @@ class MicroDevice(threading.Thread):
         self.device.execute(PUSH_CHANNEL_PRESSURE, SEWER_CHANNEL_PRESSURE,
                             UP_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_PRESSURE,
                             DOWN_CHANNEL_PRESSURE)
-        
+
     def device_start_load(self):
         """
-        Command that toggles the device to being loading worms into the device and 
+        Command that toggles the device to being loading worms into the device and
         will continue to push worms into the device until given another command
         """
         self.device.execute(PUSH_CHANNEL_STATIC, SEWER_CHANNEL_SUCK,
@@ -243,10 +243,10 @@ class MicroDevice(threading.Thread):
         #print('Required Value:' + str( 5 * self.detect_background))
         #TODO: Play with sensitivity using this?
 
-        return ((numpy.sum(numpy.abs(current_image[DETECTION_AREA].astype('int32') 
-                - background[DETECTION_AREA].astype('int32'))) 
+        return ((numpy.sum(numpy.abs(current_image[DETECTION_AREA].astype('int32')
+                - background[DETECTION_AREA].astype('int32')))
                 -self.detect_background) > DETECTION_THRES  * self.detect_background)
-    
+
     def positioned_worm(self, current_image, detected_image):
         """
         Function that determines if a worm has been positioned
@@ -372,6 +372,24 @@ class MicroDevice(threading.Thread):
 
     """
 
+    def check_dead(self, fluorescent_image):
+        """Compares 95th percentile with median (or mean) fluorescence, in order
+        to determine if animal has full wave of death fluorescence.
+        """
+        #Should probably be called in analysis function? Will be interesting to
+        #see what percentage of worms end up coming throgh already dead on a given
+        #day or if the rate goes up over time.
+
+        """
+        if some theshold of closeness:
+            dead = true
+            return dead, sort straight
+        else:
+            pass
+        """
+
+        pass
+
     def find_95th_fluor_amount(self, subtracted_image, worm_mask):
         fluor_worm = subtracted_image[worm_mask]
         fluor_95th = numpy.percentile(fluor_worm, 95)
@@ -389,7 +407,7 @@ class MicroDevice(threading.Thread):
 
         self.hist_values = []
         #TODO: would it not make more sense to save each parameter (fluor, size, etc) as an array and then put them all
-        #together in the summary file? Then I wouldn't need a separate list for hist values, would just pull from all 
+        #together in the summary file? Then I wouldn't need a separate list for hist values, would just pull from all
         #fluors taken
 
         self.sort(calibration = True)
@@ -472,13 +490,13 @@ class MicroDevice(threading.Thread):
                             break
 
                         elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
-                            #Maybe include some param that says if a worm is too close to the edge, let it get to the center 
+                            #Maybe include some param that says if a worm is too close to the edge, let it get to the center
                             difference_between_worm_background = (abs(current_image.astype('int32') - self.background.astype('int32')))
                             worm_size = self.size_of_worm(difference_between_worm_background)
                             print('Size of worm before sorting: ' + str(worm_size))
 
                             #size_check = self.check_worm_size(worm_size, self.size_threshold, self.min_worm_size)
-                            
+
                             if worm_size > self.size_threshold:     #TODO: think on how to better decide size thresholds
                                 print('Detected Double Worm')
                                 self.save_image(current_image, 'doubled worm_analyze', worm_count)
@@ -521,7 +539,7 @@ class MicroDevice(threading.Thread):
                                 sort_param, direction = self.analyze(self.background, current_image, worm_count, calibration = False)
                                 print('Worm number: ' + str(worm_count))
 
-                            #Second size check to make sure new worms haven't shown up 
+                            #Second size check to make sure new worms haven't shown up
                             #TODO: can probably put this in function
 
                             post_analysis_image = self.capture_image(self.bright)
@@ -557,7 +575,7 @@ class MicroDevice(threading.Thread):
                             #Old code here has an if statement to check if a reset is required, better place to put this?
                             #Not sure self.cleared was ever being set as true
 
-         
+
                             #TODO: Add in 'reason'+measurements for worms that are rejected (e.g. for too small, doubled, etc.)
                             #Could just save worm data array, then write out in subsequent function
                             #This might be the easier way to save multiple files to different directories
@@ -568,12 +586,12 @@ class MicroDevice(threading.Thread):
                                 note = 'sort'
                                 print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
                                 self.update_hist(sort_param)
-                            
+
                             break
 
                         else:
                             detected_image = current_image  #What is this doing?
-                        
+
                     worm_data = self.generate_data(worm_count, worm_size, sort_param, time_between_worms, direction, note)
                     self.write_csv_line(self.summary_csv, worm_data)
 
@@ -596,7 +614,7 @@ class MicroDevice(threading.Thread):
             #Close csv file?
 
     def run(self):
-        
+
         print('Running from the superclass!')
 
         self.setup_csv(self.file_location, self.info)
@@ -606,7 +624,7 @@ class MicroDevice(threading.Thread):
         self.boiler = boiler()
         self.reset = False
         self.message_sent = False
-        
+
         #0 Setting Background
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -765,7 +783,10 @@ class Background(MicroDevice):
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
 
     def analyze(self, background, worm_image, worm_count, calibration=True):
-        """
+        """Saves cyan and tritc images, calculates 95th percentile and mean for
+        both. Automatically sorts worms straight after imaging.
+
+        Returns sort param as a list.
         """
 
         worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
@@ -789,7 +810,7 @@ class Background(MicroDevice):
         direction = 'straight'
 
         sort_param = [cyan_95th, cyan_mean, tritc_95th, tritc_mean]
-        
+
         print(str(sort_param), direction)
 
         return sort_param, direction
@@ -800,19 +821,9 @@ class Background(MicroDevice):
         worm_data = [worm_count, size] + sort_param + [time, direction, note]
         return worm_data
 
-    #Need specific funciton for running worms throuhg here?
-    """
     def nosort(self):
-        self.setup_csv(self.file_location, self.info)
-        
-        self.size_threshold = 7500   #hardcoding sizes for now
-        self.min_worm_size = 2500
-        
-        self.sort(calibration=True)
-        self.summary_csv.close()
-    """
-    
-    def nosort(self):
+        """Sorts worms straight
+        """
 
         self.setup_csv(self.file_location, self.info)
 
@@ -821,7 +832,7 @@ class Background(MicroDevice):
         self.boiler = boiler()
         self.reset = False
         self.message_sent = False
-        
+
         CYAN_EXPOSURE_TIME = 20
 
         #0 Setting Background
@@ -836,10 +847,4 @@ class Background(MicroDevice):
 
         self.sort(calibration = True)
 
-        self.summary_csv.close()        
-
-
-
-
-
-
+        self.summary_csv.close()
