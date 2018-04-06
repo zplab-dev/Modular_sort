@@ -36,7 +36,7 @@ CLEARING_THRES = 3
 LOST_CUTOFF = 1.5
 DOUBLE_THRESH = 1.3
 
-CYAN_EXPOSURE_TIME = 7  #~20 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 20  #~20 for lin-4, 50 for mir-71?
 GREEN_YELLOW_EXPOSURE_TIME = 50	#for mcherry
 
 BRIGHT_FIELD_EXPOSURE_TIME = 2
@@ -273,15 +273,15 @@ class MicroDevice(threading.Thread):
         """
         mask = self.worm_mask(subtracted_image)
         #self.save_image(floored_image.astype('uint16'), 'worm_mask', True)
-        a = (-1*numpy.sum(mask))
-        return (a)
+        a = (1*numpy.sum(mask.astype('bool')))
+        return a
 
     def worm_mask(self, subtracted_image):      #Make this more consistent/make everything go through this
         floored_image = backgroundSubtraction.percentile_floor(subtracted_image, .99)
         floored_image[self.boiler] = 0
         backgroundSubtraction.clean_dust_and_holes(floored_image)
         #return floored_image.astype('bool')
-        return floored_image.astype('bool')
+        return floored_image
 
     def analyze(self):
         """
@@ -503,7 +503,7 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'big'
-                                sort_param = 'NA'
+                                sort_param = ['NA']
                                 print('Doubled worms sorted Straight')
                                 time.sleep(0.5)
                                 break
@@ -515,7 +515,7 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'big'
-                                sort_param = 'NA'
+                                sort_param = ['NA']
                                 time.sleep(0.5)
                                 break
 
@@ -651,6 +651,7 @@ class GFP(MicroDevice):
 
     def set_background_areas(self, worm_count):
         self.set_bf_background(worm_count)
+        self.lamp_off()
         self.set_cyan_background(worm_count)
         self.lamp_off()
         self.scope.tl.lamp.enabled = True
@@ -776,7 +777,9 @@ class Background(MicroDevice):
 
     def set_background_areas(self, worm_count):
         self.set_bf_background(worm_count)
+        self.lamp_off()
         self.set_cyan_background(worm_count)
+        self.lamp_off()
         self.set_green_yellow_background(worm_count)
         self.lamp_off()
         self.scope.tl.lamp.enabled = True
@@ -833,7 +836,6 @@ class Background(MicroDevice):
         self.reset = False
         self.message_sent = False
 
-        CYAN_EXPOSURE_TIME = 20
 
         #0 Setting Background
         worm_count = 0
@@ -843,7 +845,7 @@ class Background(MicroDevice):
         #input for build hist?
 
         self.size_threshold = 7500   #hard coding sizes for now
-        self.min_worm_size = 1500
+        self.min_worm_size = 500
 
         self.sort(calibration = True)
 
