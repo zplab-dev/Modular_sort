@@ -415,8 +415,23 @@ class MicroDevice(threading.Thread):
         #How to determine initial min and max sizes, to reject progeny/doubled worms without a good sample?
         self.upper_threshold = numpy.percentile(self.hist_values, 90)
         self.lower_threshold = numpy.percentile(self.hist_values, 10)
+        
+        print('Fluorescence list = \n ' , str(self.hist_values))
+        print('Avg =' + str(numpy.mean(self.hist_values)))
+        print('90th percentile =' + str(self.upper_threshold))
+        print('10th percentile =' + str(self.lower_threshold))
+            
 
         return self.hist_values, self.upper_threshold, self.lower_threshold
+    
+    def update_hist(self, fluor_amount):
+        if type(fluor_amount) != str:
+            self.hist_values.append(fluor_amount)
+            self.upper_threshold = numpy.percentile(self.hist_values, 90)
+            self.lower_threshold = numpy.percentile(self.hist_values, 10)
+            print(self.upper_threshold, self.lower_threshold)
+        else:
+            pass
 
 
     def sort(self, calibration):      #TODO: break this into general sorting function, put other relevant details in run func.
@@ -444,7 +459,8 @@ class MicroDevice(threading.Thread):
         self.device_start_load()
         time_start = time.time()
         time_seen = time_start #Initial setting for time_seen before worm found
-
+        message_sent = False
+        
         #2 Detect Worms
         try:
             while True:
@@ -452,13 +468,13 @@ class MicroDevice(threading.Thread):
                 cycle_count += 1
 
                 #TODO: Uncomment this when not simply doing bg/straight sorting--better way to do this?
-                """
-                if calibration:
+                
+                if calibration and not self.bg_flag:
                     if worm_count >= 100:   #Better way than to hard code 100 worms? passing too many arguments?
                         print('Finished initial histogram')
                         return self.hist_values
                         break
-                """
+                
                 time_without_worm = time.time()
                 if time_without_worm - time_seen > 120 and message_sent == False:
                     self.send_text(message='No worm for 2 min')
@@ -503,7 +519,11 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'big'
-                                sort_param = ['NA']
+                                if self.bg_flag:
+                                    sort_param = ['NA']
+                                elif not self.bg_flag:
+                                    sort_param = 'NA'
+                                #sort_param = ['NA']    This is for background sorting because sort_param is always a list... better way to do this that works for all usecases?
                                 print('Doubled worms sorted Straight')
                                 time.sleep(0.5)
                                 break
@@ -514,8 +534,11 @@ class MicroDevice(threading.Thread):
                                 self.save_image(current_image, 'small worm_analyze', worm_count)
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
-                                note = 'big'
-                                sort_param = ['NA']
+                                note = 'small'
+                                if self.bg_flag:
+                                    sort_param = ['NA']
+                                elif not self.bg_flag:
+                                    sort_param = 'NA'
                                 time.sleep(0.5)
                                 break
 
@@ -527,9 +550,9 @@ class MicroDevice(threading.Thread):
 
                                 sort_param, direction = self.analyze(self.background, current_image, worm_count, calibration = True)
                                 print('Calibration worm number: ' + str(worm_count))
-
-                                #self.hist_values.append(sort_param)  #building initial histogram
-                                #How to make this generalizable if not using a histogram?
+                                if not self.bg_flag:
+                                    self.hist_values.append(sort_param)  #building initial histogram
+                                    #How to make this generalizable if not using a histogram?
                             elif not calibration:
                                 #5 Save image
                                 self.save_image(current_image, 'positioned', worm_count)    #TODO: better names?
@@ -640,6 +663,11 @@ class MicroDevice(threading.Thread):
         self.sort(calibration = False)
 
         self.summary_csv.close()
+        
+    def manual_set_up(self):
+        self.hist_values = list(input('Histogram values: '))
+        self.upper_threshold = numpy.percentile(self.hist_values, 90)
+        self.lower_threshold = numpy.percentile(self.hist_values, 10)
 
 class GFP(MicroDevice):
 
@@ -695,12 +723,6 @@ class GFP(MicroDevice):
                 direction = 'straight'
 
         return worm_fluor, direction
-
-    def update_hist(self, fluor_amount):
-        self.hist_values.append(fluor_amount)
-        self.upper_threshold = numpy.percentile(self.hist_values, 90)
-        self.loewr_threshold = numpy.percentile(self.hist_values, 10)
-        print(self.upper_threshold, self.lower_threshold)
 
     def generate_data(self, worm_count, size, sort_param, time, direction, note):
         """Function for returning the right csv lin config for a given class.
@@ -769,7 +791,7 @@ class Autofluorescence(MicroDevice):
 
         self.boiler = boiler()
         self.reset = False
-        self.message_sent = False
+        self.bg_flag = False
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -780,7 +802,11 @@ class Autofluorescence(MicroDevice):
         self.size_threshold = 7500   #hard coding sizes for now
         self.min_worm_size = 2500
 
-        self.sort(calibration = True)
+        self.build_hist()
+        
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+        
+        self.sort(calibration = False)
 
         self.summary_csv.close()
 
@@ -850,6 +876,8 @@ class Background(MicroDevice):
     def nosort(self):
         """Sorts worms straight
         """
+        
+        self.bg_flag = True
 
         self.setup_csv(self.file_location, self.info)
 
@@ -857,8 +885,6 @@ class Background(MicroDevice):
 
         self.boiler = boiler()
         self.reset = False
-        self.message_sent = False
-
 
         #0 Setting Background
         worm_count = 0
