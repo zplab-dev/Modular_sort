@@ -677,14 +677,14 @@ class GFP(MicroDevice):
         print('GFP value = ' + str(worm_fluor))
 
         if calibration:
-            self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', worm_count)
+            self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
             #astype('uint8')*255
             self.save_image(gfp_fluor_image, 'calibration_worm_fluor', worm_count)
             direction = 'straight'
             return worm_fluor, direction
 
         elif not calibration:
-            self.save_image(worm_mask.astype('uint16'), 'worm_mask', worm_count)
+            self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
             self.save_image(gfp_fluor_image, 'fluor_gfp', worm_count)
 
             if worm_fluor >= self.upper_threshold:
@@ -712,7 +712,7 @@ class GFP(MicroDevice):
         return worm_data
 
 
-class Autofluor(MicroDevice):
+class Autofluorescence(MicroDevice):
 
     def setup_csv(self, file_location, info):
         self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
@@ -739,14 +739,14 @@ class Autofluor(MicroDevice):
         print('Autofluorescence value = ' + str(worm_fluor))
 
         if calibration:
-            self.save_image(worm_mask.astype('uint16'), 'calibration_worm_mask', worm_count)
+            self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
             self.save_image(tritc_image, 'calibration_worm_fluor', worm_count)
             direction = 'straight'
             return worm_fluor, direction
 
         elif not calibration:
-            self.save_image(worm_mask.astype('uint16'), 'worm_mask', worm_count)
-            self.save_image(tritc_image, 'fluor_gfp', worm_count)
+            self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
+            self.save_image(tritc_image, 'red_autofluor', worm_count)
 
             if worm_fluor >= self.upper_threshold:
                 direction = 'up'
@@ -760,6 +760,29 @@ class Autofluor(MicroDevice):
     def generate_data(self, worm_count, size, sort_param, time, direction, note):
         worm_data = [worm_count, size, sort_param, time, direction, note]
         return worm_data
+
+    def go(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+        self.reset = False
+        self.message_sent = False
+
+        worm_count = 0
+        self.set_background_areas(worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 7500   #hard coding sizes for now
+        self.min_worm_size = 2500
+
+        self.sort(calibration = True)
+
+        self.summary_csv.close()
 
 class Background(MicroDevice):
     """For gathering data on nonfluorescent worms, background autofluorescence of the system
@@ -794,7 +817,7 @@ class Background(MicroDevice):
 
         worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
         worm_mask = self.worm_mask(worm_subtracted).astype('bool')
-        self.save_image(worm_mask.astype('uint16'), 'worm_mask', worm_count)
+        self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
 
         cyan_fluor_image = self.capture_image(self.cyan)
         cyan_subtracted = abs(cyan_fluor_image.astype('int32')- self.cyan_background.astype('int32'))
