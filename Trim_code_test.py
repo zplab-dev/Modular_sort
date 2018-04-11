@@ -335,7 +335,7 @@ class MicroDevice(threading.Thread):
                 time_stuck = time.time()
                 if time_stuck - time_clear_start > 60 and message_sent == False:
                     self.send_text(message='Sort stuck trying to clear')
-                    print('Sent text: Device stuck')
+                    print('Sent text: Device stuck, reseting bg')
                     message_sent = True
                     self.reset_background(worm_count)
                     return True
@@ -470,7 +470,7 @@ class MicroDevice(threading.Thread):
                 #TODO: Uncomment this when not simply doing bg/straight sorting--better way to do this?
                 
                 if calibration and not self.bg_flag:
-                    if worm_count >= 100:   #Better way than to hard code 100 worms? passing too many arguments?
+                    if len(self.hist_values) >= 100:   #Better way than to hard code 100 worms? passing too many arguments?
                         print('Finished initial histogram')
                         return self.hist_values
                         break
@@ -491,6 +491,9 @@ class MicroDevice(threading.Thread):
                     time_between_worms = time_seen - time_start
                     detected_image = current_image
                     worm_count += 1
+                    if message_sent == True:
+                        self.send_text(message = 'Worms are back')
+                        message_sent = False
 
                     #3 Stop worms
                     self.device_stop_load()
@@ -499,10 +502,13 @@ class MicroDevice(threading.Thread):
                     while True:
                         current_image = self.capture_image(self.bright)
                         if self.lost_worm(current_image, self.background):
-                            print('Worm was lost')
+                            print('Worm ' + str(worm_count) + ' was lost')
                             self.device.execute(SEWER_CHANNEL_PRESSURE)
                             time.sleep(.1)
-                            worm_count -= 1
+                            worm_size = 'NA'
+                            sort_param = 'NA'
+                            direction = 'straight'
+                            note = 'lost'
                             break
 
                         elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
@@ -550,7 +556,7 @@ class MicroDevice(threading.Thread):
 
                                 sort_param, direction = self.analyze(self.background, current_image, worm_count, calibration = True)
                                 print('Calibration worm number: ' + str(worm_count))
-                                if not self.bg_flag:
+                                if not self.bg_flag and type(sort_param) != str:
                                     self.hist_values.append(sort_param)  #building initial histogram
                                     #How to make this generalizable if not using a histogram?
                             elif not calibration:
@@ -617,6 +623,7 @@ class MicroDevice(threading.Thread):
 
                     worm_data = self.generate_data(worm_count, worm_size, sort_param, time_between_worms, direction, note)
                     self.write_csv_line(self.summary_csv, worm_data)
+                    print('Worm ' + str(worm_count) + ' data saved')
 
                     if worm_count % 100 == 0 and worm_count != 0:   #Resets background every 100 worms
                         self.reset_background(worm_count)
@@ -732,6 +739,33 @@ class GFP(MicroDevice):
 
         worm_data = [worm_count, size, sort_param, time, direction, note]
         return worm_data
+    
+    def go(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+        self.reset = False
+        self.bg_flag = False
+
+        worm_count = 0
+        self.set_background_areas(worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 7500   #hard coding sizes for now
+        self.min_worm_size = 3000
+
+        self.build_hist()
+        
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+        
+        self.sort(calibration = False)
+
+        self.summary_csv.close()
 
 
 class Autofluorescence(MicroDevice):
