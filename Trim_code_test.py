@@ -201,12 +201,15 @@ class MicroDevice(threading.Thread):
         save_location = str(self.file_location) + '/' + name + '_' + str(worm_count) + '.png'
         freeimage.write(image, save_location, flags=freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
 
-    def set_background_areas(self):
-        """
-        Function that sets the background values for areas of interest in an
-        list of numpy arrays
-        """
-        raise NotImplementedError('No sorting method given')
+    def set_background_areas(self, worm_count):
+        self.set_bf_background(worm_count)
+        self.lamp_off()
+        self.set_cyan_background(worm_count)
+        self.lamp_off()
+        self.set_green_yellow_background(worm_count)
+        self.lamp_off()
+        self.scope.tl.lamp.enabled = True
+        self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
 
     def set_bf_background(self, worm_count):        #Why does this take two images while fluor bgs only take one?
         """
@@ -281,7 +284,21 @@ class MicroDevice(threading.Thread):
         floored_image[self.boiler] = 0
         backgroundSubtraction.clean_dust_and_holes(floored_image)
         #return floored_image.astype('bool')
+        
+        #TODO: add in erosion and dilation steps to smooth mask
+        
         return floored_image
+    
+    def capture_fluorescent_images(self, worm_count):
+        #TODO: Return images with background pre-subtracted? Pretty sure I'm never working with the raw image anyway
+        
+        cyan_fluor_image = self.capture_image(self.cyan)
+        self.save_image(cyan_fluor_image, 'cyan_worm', worm_count)
+
+        tritc_fluor_image = self.capture_image(self.green_yellow)
+        self.save_image(tritc_fluor_image, 'tritc_worm', worm_count)
+        
+        return cyan_fluor_image, tritc_fluor_image
 
     def analyze(self):
         """
@@ -371,24 +388,19 @@ class MicroDevice(threading.Thread):
             return 'good'
 
     """
-
-    def check_dead(self, fluorescent_image):
-        """Compares 95th percentile with median (or mean) fluorescence, in order
-        to determine if animal has full wave of death fluorescence.
-        """
+    
+    """
+    def check_dead(self, cyan_image):
+       #Compares 95th percentile with median (or mean) fluorescence, in order
+       #to determine if animal has full wave of death fluorescence.
+        
         #Should probably be called in analysis function? Will be interesting to
         #see what percentage of worms end up coming throgh already dead on a given
         #day or if the rate goes up over time.
-
-        """
-        if some theshold of closeness:
-            dead = true
-            return dead, sort straight
-        else:
-            pass
-        """
-
-        pass
+        cyan_subtracted = abs(cyan_image.astype('int32')- self.cyan_background.astype('int32'))
+        fluor_95th = find_95th_fluor_amount(
+        
+    """
 
     def find_95th_fluor_amount(self, subtracted_image, worm_mask):
         fluor_worm = subtracted_image[worm_mask]
@@ -506,7 +518,10 @@ class MicroDevice(threading.Thread):
                             self.device.execute(SEWER_CHANNEL_PRESSURE)
                             time.sleep(.1)
                             worm_size = 'NA'
-                            sort_param = 'NA'
+                            if self.bg_flag:
+                                sort_param = ['NA']
+                            elif not self.bg_flag:
+                                sort_param = 'NA'
                             direction = 'straight'
                             note = 'lost'
                             break
@@ -529,7 +544,6 @@ class MicroDevice(threading.Thread):
                                     sort_param = ['NA']
                                 elif not self.bg_flag:
                                     sort_param = 'NA'
-                                #sort_param = ['NA']    This is for background sorting because sort_param is always a list... better way to do this that works for all usecases?
                                 print('Doubled worms sorted Straight')
                                 time.sleep(0.5)
                                 break
@@ -549,6 +563,23 @@ class MicroDevice(threading.Thread):
                                 break
 
                             print('Worm positioned')
+                            
+                            """
+                            cyan_image, tritc_image = capture_fluorescent_images(worm_count)
+                            
+                            if check_dead(cyan_image) == True:
+                                print('Worm ' + worm_count + ' determined dead')
+                                self.save_image(current_image, 'dead_worm', worm_count)
+                                self.device_sort('straight', self.background, worm_count)
+                                direction = 'straight'
+                                note = 'dead'
+                                if self.bg_flag:
+                                    sort_param = ['NA']
+                                elif not self.bg_flag:
+                                    sort_param = 'NA'
+                                time.sleep(0.5)
+                                break
+                            """
 
                             if calibration:
                                 self.save_image(current_image, 'calibration_worm', worm_count)
@@ -582,6 +613,7 @@ class MicroDevice(threading.Thread):
                                 self.save_image(current_image, 'doubled worm_analyze', worm_count)
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
+                                
                                 note = 'big'
                                 print('Doubled worms sorted Straight')
                                 time.sleep(0.5)
@@ -684,14 +716,6 @@ class GFP(MicroDevice):
         header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
 
-    def set_background_areas(self, worm_count):
-        self.set_bf_background(worm_count)
-        self.lamp_off()
-        self.set_cyan_background(worm_count)
-        self.lamp_off()
-        self.scope.tl.lamp.enabled = True
-        self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
-
     def manual_set_up(self):
         self.upper_threshold = int(input('Upper GFP threshold = '))
         self.lower_threshold = int(input('Lower GFP threshold = '))
@@ -776,13 +800,6 @@ class Autofluorescence(MicroDevice):
         header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
 
-    def set_background_areas(self, worm_count):
-        self.set_bf_background(worm_count)
-        self.set_green_yellow_background(worm_count)
-        self.lamp_off()
-        self.scope.tl.lamp.enabled = True
-        self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
-
     def analyze(self, background, worm_image, worm_count, calibration=False):
         """
         """
@@ -793,7 +810,7 @@ class Autofluorescence(MicroDevice):
 
         worm_fluor = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
         print('Autofluorescence value = ' + str(worm_fluor))
-
+        
         if calibration:
             self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
             self.save_image(tritc_image, 'calibration_worm_fluor', worm_count)
@@ -833,8 +850,8 @@ class Autofluorescence(MicroDevice):
         time.sleep(1)
         #input for build hist?
 
-        self.size_threshold = 7500   #hard coding sizes for now
-        self.min_worm_size = 2500
+        self.size_threshold = 8000   #hard coding sizes for now
+        self.min_worm_size = 3000
 
         self.build_hist()
         
@@ -857,16 +874,6 @@ class Background(MicroDevice):
         self.summary_csv = open(str(self.summary_csv_location), 'w')
         header = ['worm_number', 'size', 'cyan_95th', 'cyan_mean', 'tritc_95th', 'tritc_mean', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
-
-    def set_background_areas(self, worm_count):
-        self.set_bf_background(worm_count)
-        self.lamp_off()
-        self.set_cyan_background(worm_count)
-        self.lamp_off()
-        self.set_green_yellow_background(worm_count)
-        self.lamp_off()
-        self.scope.tl.lamp.enabled = True
-        self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
 
     def analyze(self, background, worm_image, worm_count, calibration=True):
         """Saves cyan and tritc images, calculates 95th percentile and mean for
