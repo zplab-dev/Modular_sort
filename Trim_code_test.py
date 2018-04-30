@@ -283,21 +283,44 @@ class MicroDevice(threading.Thread):
         floored_image = backgroundSubtraction.percentile_floor(subtracted_image, .99)
         floored_image[self.boiler] = 0
         backgroundSubtraction.clean_dust_and_holes(floored_image)
-        #return floored_image.astype('bool')
-        
-        #TODO: add in erosion and dilation steps to smooth mask
+
+        #Cleans mask/removes jagged lines from sorter background
+        for i in range(3):
+            floored_image = ndimage.binary_erosion(floored_image)
+        for i in range(3):
+            floored_image = ndimage.binary_dilation(floored_image)
         
         return floored_image
-    
+
+    def find_dimensions(self, mask):
+        """Takes boolean mask (cleaned) and returns length and width, treating the worm roughly as a box
+        """
+        xs, ys = ndimage.find_object(mask)[0]
+        cropped_image = mask[xs, ys]
+
+        length, width = cropped_image.shape
+        print('Length = ' + length)
+        print('aspect ratio = ' + str(length/width))
+
+        #How to make it wait longer if a worm hasn't finished entering the viewing area? Makes sense to gate
+        #by how far the x axis extends? Need to return an extra variable to check for that?
+        return length, width
+
     def capture_fluorescent_images(self, worm_count):
         #TODO: Return images with background pre-subtracted? Pretty sure I'm never working with the raw image anyway
+        #Only bugaboo there is when to save images as calibration, but could just set a flag here (as with analysis methods)
+        #Or could just return raw image and save them out as needed depending on if running calibration or not
         
         cyan_fluor_image = self.capture_image(self.cyan)
-        self.save_image(cyan_fluor_image, 'cyan_worm', worm_count)
+        #self.save_image(cyan_fluor_image, 'cyan_worm', worm_count)
+        #cyan_subtracted = numpy.clip(cyan_fluor_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
+        #should return subtracted image with a floor of zero
 
         tritc_fluor_image = self.capture_image(self.green_yellow)
-        self.save_image(tritc_fluor_image, 'tritc_worm', worm_count)
-        
+        #self.save_image(tritc_fluor_image, 'tritc_worm', worm_count)
+        #tritc_subtracted = numpy.clip(tritc_fluor_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
+        #Need to make sure this is actually returning useable images and not just crushing values 
+
         return cyan_fluor_image, tritc_fluor_image
 
     def analyze(self):
@@ -389,18 +412,25 @@ class MicroDevice(threading.Thread):
 
     """
     
-    """
-    def check_dead(self, cyan_image):
+    def check_dead(self, cyan_subtracted, mask):
        #Compares 95th percentile with median (or mean) fluorescence, in order
        #to determine if animal has full wave of death fluorescence.
         
         #Should probably be called in analysis function? Will be interesting to
         #see what percentage of worms end up coming throgh already dead on a given
         #day or if the rate goes up over time.
-        cyan_subtracted = abs(cyan_image.astype('int32')- self.cyan_background.astype('int32'))
-        fluor_95th = find_95th_fluor_amount(
-        
-    """
+        fluor_95th = find_95th_fluor_amount(cyan_subtracted, mask)
+        fluor_median = find_median_fluor_amount(cyan_subtracted, mask)
+
+        if 2*fluor_median >= fluor_95th:
+            return True
+        else:
+            pass
+
+    def check_aspect_ratio(self, length, width):
+        """Overwritten if sorting by worm length
+        """
+        pass
 
     def find_95th_fluor_amount(self, subtracted_image, worm_mask):
         fluor_worm = subtracted_image[worm_mask]
@@ -411,6 +441,11 @@ class MicroDevice(threading.Thread):
         fluor_worm = subtracted_image[worm_mask]
         mean_fluor = numpy.mean(fluor_worm)
         return mean_fluor
+
+    def find_median_fluor_amount(self, subtracted_image, worm_mask):
+        fluor_worm = subtracted_image[worm_mask]
+        fluor_median = numpy.median(fluor_worm)
+        return fluor_median
 
     def build_hist(self):
         """Function that builds initial histogram from which percentiles are taken to determine upper and lower thresholds
@@ -436,9 +471,9 @@ class MicroDevice(threading.Thread):
 
         return self.hist_values, self.upper_threshold, self.lower_threshold
     
-    def update_hist(self, fluor_amount):
-        if type(fluor_amount) != str:
-            self.hist_values.append(fluor_amount)
+    def update_hist(self, sort_param):
+        if type(sort_param) != str:
+            self.hist_values.append(sort_param)
             self.upper_threshold = numpy.percentile(self.hist_values, 90)
             self.lower_threshold = numpy.percentile(self.hist_values, 10)
             print(self.upper_threshold, self.lower_threshold)
@@ -466,6 +501,8 @@ class MicroDevice(threading.Thread):
         self.down_count = 0
         self.straight_count = 0
         cycle_count = 0
+
+        test_counter = 0
 
         #1 Loading Worms
         self.device_start_load()
@@ -513,7 +550,7 @@ class MicroDevice(threading.Thread):
                     #4 Position worms
                     while True:
                         current_image = self.capture_image(self.bright)
-                        if self.lost_worm(current_image, self.background):
+                        if self.lost_worm(current_image, self.background):  #This doesnt seem to get called often
                             print('Worm ' + str(worm_count) + ' was lost')
                             self.device.execute(SEWER_CHANNEL_PRESSURE)
                             time.sleep(.1)
@@ -528,8 +565,19 @@ class MicroDevice(threading.Thread):
 
                         elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
                             #Maybe include some param that says if a worm is too close to the edge, let it get to the center
-                            difference_between_worm_background = (abs(current_image.astype('int32') - self.background.astype('int32')))
-                            worm_size = self.size_of_worm(difference_between_worm_background)
+                            
+                            bf_subtracted = (abs(current_image.astype('int32') - self.background.astype('int32')))
+                            cyan_image, tritc_image = self.capture_fluorescent_images(worm_count)
+
+                            cyan_subtracted = numpy.clip(cyan_fluor_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
+                            tritc_subtracted = numpy.clip(tritc_fluor_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
+                            
+                            worm_mask = worm_mask(bf_subtracted)
+        
+                            autofluorescence = numpy.percentile(tritc_subtracted[worm_mask], 95)
+
+                            worm_size = self.size_of_worm(bf_subtracted)
+
                             print('Size of worm before sorting: ' + str(worm_size))
 
                             #size_check = self.check_worm_size(worm_size, self.size_threshold, self.min_worm_size)
@@ -562,12 +610,19 @@ class MicroDevice(threading.Thread):
                                 time.sleep(0.5)
                                 break
 
+                            if check_aspect_ratio() == 'bent':
+                                print('Worm doubled over')
+                                self.save_image(current_image, 'bent_worm', worm_count)
+                                self.device_sort('straight', self.background, worm_count)
+                                direction = 'straight'
+                                note = 'bent'
+                                sort_param = 'NA'
+                                time.sleep(0.25)
+                                break
+
                             print('Worm positioned')
-                            
-                            """
-                            cyan_image, tritc_image = capture_fluorescent_images(worm_count)
-                            
-                            if check_dead(cyan_image) == True:
+
+                            if check_dead(cyan_subtracted, worm_mask) == True:
                                 print('Worm ' + worm_count + ' determined dead')
                                 self.save_image(current_image, 'dead_worm', worm_count)
                                 self.device_sort('straight', self.background, worm_count)
@@ -579,13 +634,15 @@ class MicroDevice(threading.Thread):
                                     sort_param = 'NA'
                                 time.sleep(0.5)
                                 break
-                            """
 
                             if calibration:
                                 self.save_image(current_image, 'calibration_worm', worm_count)
-                                print('Image saved')
+                                self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
+                                self.save_image(cyan_image, 'calibration_cyan_worm', worm_count)
+                                self.save_image(tritc_image, 'calibration_tritc_worm', worm_count)
+                                print('Images saved')
 
-                                sort_param, direction = self.analyze(self.background, current_image, worm_count, calibration = True)
+                                sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = True)
                                 print('Calibration worm number: ' + str(worm_count))
                                 if not self.bg_flag and type(sort_param) != str:
                                     self.hist_values.append(sort_param)  #building initial histogram
@@ -593,10 +650,13 @@ class MicroDevice(threading.Thread):
                             elif not calibration:
                                 #5 Save image
                                 self.save_image(current_image, 'positioned', worm_count)    #TODO: better names?
-                                print('Image saved')
+                                self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
+                                self.save_image(cyan_image, 'cyan_worm', worm_count)
+                                self.save_image(tritc_image, 'tritc_worm', worm_count)
+                                print('Images saved')
 
                                 #6 Analyze worms
-                                sort_param, direction = self.analyze(self.background, current_image, worm_count, calibration = False)
+                                sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False)
                                 print('Worm number: ' + str(worm_count))
 
                             #Second size check to make sure new worms haven't shown up
@@ -605,8 +665,9 @@ class MicroDevice(threading.Thread):
                             post_analysis_image = self.capture_image(self.bright)
                             difference_between_worm_background = (abs(post_analysis_image.astype('int32') - self.background.astype('int32')))
                             worm_size_2 = self.size_of_worm(difference_between_worm_background)
+                            
                             print('Size of worm after analysis: ' + str(worm_size_2))
-                            #Maybe instead of a second size threshold test, check if size has changed appreciably
+                            #TODO: Maybe instead of a second size threshold test, check if size has changed appreciably?
 
                             if worm_size_2 > self.size_threshold:
                                 print('Detected Double Worm')
@@ -617,6 +678,10 @@ class MicroDevice(threading.Thread):
                                 note = 'big'
                                 print('Doubled worms sorted Straight')
                                 time.sleep(0.5)
+                                test_counter += 1
+                                print('***')
+                                print('Times this feature has been useful: ' + test_counter)
+                                print('***')
                                 break
 
                             elif worm_size_2 < self.min_worm_size:
@@ -626,6 +691,10 @@ class MicroDevice(threading.Thread):
                                 direction = 'straight'
                                 note = 'small'
                                 time.sleep(0.5)
+                                test_counter += 1
+                                print('***')
+                                print('Times this feature has been useful: ' + test_counter)
+                                print('***')
                                 break
 
                             #7 Sort worms
@@ -642,7 +711,7 @@ class MicroDevice(threading.Thread):
                             #This might be the easier way to save multiple files to different directories
                             #Currently, worm_data is written worm by worm, and discarded immediately afterward
                             if calibration:
-                                note = 'hist'
+                                note = 'calibration'
                             elif not calibration:
                                 note = 'sort'
                                 print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
@@ -653,7 +722,8 @@ class MicroDevice(threading.Thread):
                         else:
                             detected_image = current_image  #What is this doing?
 
-                    worm_data = self.generate_data(worm_count, worm_size, sort_param, time_between_worms, direction, note)
+                    worm_data = self.generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note)
+                    #TODO: Fix data generation across all classes
                     self.write_csv_line(self.summary_csv, worm_data)
                     print('Worm ' + str(worm_count) + ' data saved')
 
@@ -676,8 +746,6 @@ class MicroDevice(threading.Thread):
             #Close csv file?
 
     def run(self):
-
-        print('Running from the superclass!')
 
         self.setup_csv(self.file_location, self.info)
 
@@ -713,7 +781,7 @@ class GFP(MicroDevice):
     def setup_csv(self, file_location, info):
         self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
         self.summary_csv = open(str(self.summary_csv_location), 'w')
-        header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'note']
+        header = ['worm_number', 'size', 'red_autofluor', 'fluorescence', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
 
     def manual_set_up(self):
@@ -875,27 +943,15 @@ class Background(MicroDevice):
         header = ['worm_number', 'size', 'cyan_95th', 'cyan_mean', 'tritc_95th', 'tritc_mean', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
 
-    def analyze(self, background, worm_image, worm_count, calibration=True):
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = True):
         """Saves cyan and tritc images, calculates 95th percentile and mean for
         both. Automatically sorts worms straight after imaging.
 
         Returns sort param as a list.
         """
 
-        worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
-        worm_mask = self.worm_mask(worm_subtracted).astype('bool')
-        self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
-
-        cyan_fluor_image = self.capture_image(self.cyan)
-        cyan_subtracted = abs(cyan_fluor_image.astype('int32')- self.cyan_background.astype('int32'))
-        self.save_image(cyan_fluor_image, 'cyan_worm', worm_count)
-
         cyan_95th = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
         cyan_mean = self.find_mean_fluor_amount(cyan_subtracted, worm_mask)
-
-        tritc_fluor_image = self.capture_image(self.green_yellow)
-        tritc_subtracted = abs(tritc_fluor_image.astype('int32') - self.green_yellow_background.astype('int32'))
-        self.save_image(tritc_fluor_image, 'tritc_worm', worm_count)
 
         tritc_95th = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
         tritc_mean = self.find_mean_fluor_amount(tritc_subtracted, worm_mask)
@@ -908,7 +964,7 @@ class Background(MicroDevice):
 
         return sort_param, direction
 
-    def generate_data(self, worm_count, size, sort_param, time, direction, note):
+    def generate_data(self, worm_count, autofluorescence, size, sort_param, time, direction, note):
         """sort_param is a list here, necessitating specific function. Direction and note aren't really salient here.
         """
         worm_data = [worm_count, size] + sort_param + [time, direction, note]
@@ -940,3 +996,89 @@ class Background(MicroDevice):
         self.sort(calibration = True)
 
         self.summary_csv.close()
+
+
+class Length(MicroDevice):
+
+    def setup_csv(self, file_location, info):
+        self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'red_autofluor(95th%)', 'length', 'time', 'direction', 'note']
+        self.summary_csv.write(','.join(header) + '\n')
+
+    def check_aspect_ratio(self, length, width):
+        """Takes length and width measurements from find_dimensions and returns whether or not the worm is likely
+        to have been folded over, meaning it's length measurement is not accurate. Straight worms typically have 
+        an "aspect ratio" (lengt/width) of >=6.
+        """
+        aspect_ratio = length/width
+
+        if aspect_ratio >= 6:
+            return 'straight'
+        elif aspect_ratio < 6:
+            print('Worm folded over')
+            return 'bent'
+
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
+
+        length, width = find_dimensions(worm_mask)
+
+        print('Worm length = ' + length)
+        
+        if calibration:
+            direction = 'straight'
+            return length, direction
+
+        elif not calibration:
+            if length >= self.upper_threshold:
+                direction = 'up'
+            elif length <= self.lower_threshold:
+                direction = 'down'
+            else:
+                direction = 'straight'
+
+        return length, direction
+
+    def generate_data(self, worm_count, size, autofluorescence, sort_param, time, direction, note):
+        #Realizing this could be generalized as sort param is always a single var or a list
+        #Just write as if type(sort_param) =! list
+        worm_data = [worm_count, size, autofluorescence, sort_param, time, direction, note]
+        return worm_data
+
+    def go(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+        self.reset = False
+        self.bg_flag = False
+
+        worm_count = 0
+        self.set_background_areas(worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 8000   #hard coding sizes for now
+        self.min_worm_size = 3000
+
+        self.build_hist()
+        
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+        
+        self.sort(calibration = False)
+
+        self.summary_csv.close()
+
+
+
+            
+
+
+
+
+
+
+
