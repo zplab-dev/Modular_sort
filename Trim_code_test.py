@@ -11,7 +11,7 @@ Classes to sort on GFP, autofluorescence, length.
 import iotool
 from scope import scope_client
 from pathlib import Path
-import scipy
+from scipy import ndimage
 import numpy
 import time
 import backgroundSubtraction
@@ -84,6 +84,8 @@ class MicroDevice(threading.Thread):
         self.scope.camera.readout_rate = '280 MHz'
         self.scope.camera.binning = '2x2'
         self.scope.tl.lamp.enabled = True
+        self.scope.il.spectra.cyan.enabled = False
+        self.scope.il.spectra.green_yellow.enabled = False
 
         self.device = iotool.IOTool("/dev/ttyMicrofluidics")
 
@@ -295,11 +297,11 @@ class MicroDevice(threading.Thread):
     def find_dimensions(self, mask):
         """Takes boolean mask (cleaned) and returns length and width, treating the worm roughly as a box
         """
-        xs, ys = ndimage.find_object(mask)[0]
+        xs, ys = ndimage.find_objects(mask)[0]
         cropped_image = mask[xs, ys]
 
         length, width = cropped_image.shape
-        print('Length = ' + length)
+        print('Length = ' + str(length))
         print('aspect ratio = ' + str(length/width))
 
         #How to make it wait longer if a worm hasn't finished entering the viewing area? Makes sense to gate
@@ -315,6 +317,8 @@ class MicroDevice(threading.Thread):
         #self.save_image(cyan_fluor_image, 'cyan_worm', worm_count)
         #cyan_subtracted = numpy.clip(cyan_fluor_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
         #should return subtracted image with a floor of zero
+        
+        time.sleep(PICTURE_DELAY)
 
         tritc_fluor_image = self.capture_image(self.green_yellow)
         #self.save_image(tritc_fluor_image, 'tritc_worm', worm_count)
@@ -419,8 +423,8 @@ class MicroDevice(threading.Thread):
         #Should probably be called in analysis function? Will be interesting to
         #see what percentage of worms end up coming throgh already dead on a given
         #day or if the rate goes up over time.
-        fluor_95th = find_95th_fluor_amount(cyan_subtracted, mask)
-        fluor_median = find_median_fluor_amount(cyan_subtracted, mask)
+        fluor_95th = self.find_95th_fluor_amount(cyan_subtracted, mask)
+        fluor_median = self.find_median_fluor_amount(cyan_subtracted, mask)
 
         if 2*fluor_median >= fluor_95th:
             return True
@@ -515,8 +519,6 @@ class MicroDevice(threading.Thread):
             while True:
 
                 cycle_count += 1
-
-                #TODO: Uncomment this when not simply doing bg/straight sorting--better way to do this?
                 
                 if calibration and not self.bg_flag:
                     if len(self.hist_values) >= 100:   #Better way than to hard code 100 worms? passing too many arguments?
@@ -555,6 +557,7 @@ class MicroDevice(threading.Thread):
                             self.device.execute(SEWER_CHANNEL_PRESSURE)
                             time.sleep(.1)
                             worm_size = 'NA'
+                            autofluorescence = 'NA'
                             if self.bg_flag:
                                 sort_param = ['NA']
                             elif not self.bg_flag:
@@ -566,15 +569,11 @@ class MicroDevice(threading.Thread):
                         elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
                             #Maybe include some param that says if a worm is too close to the edge, let it get to the center
                             
-                            bf_subtracted = (abs(current_image.astype('int32') - self.background.astype('int32')))
-                            cyan_image, tritc_image = self.capture_fluorescent_images(worm_count)
-
-                            cyan_subtracted = numpy.clip(cyan_fluor_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
-                            tritc_subtracted = numpy.clip(tritc_fluor_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
                             
-                            worm_mask = worm_mask(bf_subtracted)
-        
-                            autofluorescence = numpy.percentile(tritc_subtracted[worm_mask], 95)
+                            bf_subtracted = (abs(current_image.astype('int32') - self.background.astype('int32')))
+                                                        
+                            worm_mask = self.worm_mask(bf_subtracted)
+                            length, width = self.find_dimensions(worm_mask)
 
                             worm_size = self.size_of_worm(bf_subtracted)
 
@@ -588,6 +587,7 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'big'
+                                autofluorescence = 'NA'
                                 if self.bg_flag:
                                     sort_param = ['NA']
                                 elif not self.bg_flag:
@@ -603,6 +603,7 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'small'
+                                autofluorescence = 'NA'
                                 if self.bg_flag:
                                     sort_param = ['NA']
                                 elif not self.bg_flag:
@@ -610,21 +611,30 @@ class MicroDevice(threading.Thread):
                                 time.sleep(0.5)
                                 break
 
-                            if check_aspect_ratio() == 'bent':
+                            if self.check_aspect_ratio(length, width) == 'bent':
+                                #Should only call this function properly if running in length class
                                 print('Worm doubled over')
                                 self.save_image(current_image, 'bent_worm', worm_count)
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'bent'
                                 sort_param = 'NA'
+                                autofluorescence = 'NA'
                                 time.sleep(0.25)
                                 break
 
                             print('Worm positioned')
+                            
+                            cyan_image, tritc_image = self.capture_fluorescent_images(worm_count)
+                            cyan_subtracted = numpy.clip(cyan_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
+                            tritc_subtracted = numpy.clip(tritc_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
+                            
+                            autofluorescence = numpy.percentile(tritc_subtracted[worm_mask], 95)
 
-                            if check_dead(cyan_subtracted, worm_mask) == True:
-                                print('Worm ' + worm_count + ' determined dead')
+                            if self.check_dead(cyan_subtracted, worm_mask) == True:
+                                print('Worm ' + str(worm_count) + ' determined dead')
                                 self.save_image(current_image, 'dead_worm', worm_count)
+                                self.save_image(cyan_image, 'dead_worm_cyan', worm_count)
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'dead'
@@ -680,7 +690,7 @@ class MicroDevice(threading.Thread):
                                 time.sleep(0.5)
                                 test_counter += 1
                                 print('***')
-                                print('Times this feature has been useful: ' + test_counter)
+                                print('Times this feature has been useful: ' + str(test_counter))
                                 print('***')
                                 break
 
@@ -693,7 +703,7 @@ class MicroDevice(threading.Thread):
                                 time.sleep(0.5)
                                 test_counter += 1
                                 print('***')
-                                print('Times this feature has been useful: ' + test_counter)
+                                print('Times this feature has been useful: ' + str(test_counter))
                                 print('***')
                                 break
 
@@ -1021,7 +1031,7 @@ class Length(MicroDevice):
 
     def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
 
-        length, width = find_dimensions(worm_mask)
+        length, width = self.find_dimensions(worm_mask)
 
         print('Worm length = ' + length)
         
@@ -1072,7 +1082,10 @@ class Length(MicroDevice):
 
         self.summary_csv.close()
 
+#class Q35(MicroDevice):
+    
 
+    
 
             
 
