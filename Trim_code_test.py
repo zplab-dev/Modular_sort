@@ -31,12 +31,12 @@ FLUORESCENT_AREA = (slice(500,1100), slice(530, 590))
 
 FLUOR_PIXEL_BRIGHT_VALUE = 500		#Used for finding brightness, newer/better way to do this?
 DETECTION_THRES = 4
-POSITION_THRES = 3
+POSITION_THRES = 3  #Play with this? Or if it ain't broke don't fix it?
 CLEARING_THRES = 3
 LOST_CUTOFF = 1.5
 DOUBLE_THRESH = 1.3
 
-CYAN_EXPOSURE_TIME = 20  #~20 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 10  #~20 for lin-4, 50 for mir-71?
 GREEN_YELLOW_EXPOSURE_TIME = 50	#for mcherry
 
 BRIGHT_FIELD_EXPOSURE_TIME = 2
@@ -280,6 +280,18 @@ class MicroDevice(threading.Thread):
         #self.save_image(floored_image.astype('uint16'), 'worm_mask', True)
         a = (1*numpy.sum(mask.astype('bool')))
         return a
+    
+    def check_size_change(self, size_before, size_after):
+        #Construct new worm_mask
+        #Compare with previous size
+        #Should be within ~10% of original size, otherwise new worm may have shown up (or worm may have been lost)
+        #Will this mess me up with worms that get imaged before being fully in frame? Need to also implement edge-closeness rule
+        
+        if abs(size_after - size_before) > 0.1 * size_before:
+            return True
+        else:
+            pass
+        
 
     def worm_mask(self, subtracted_image):      #Make this more consistent/make everything go through this
         floored_image = backgroundSubtraction.percentile_floor(subtracted_image, .99)
@@ -307,25 +319,6 @@ class MicroDevice(threading.Thread):
         #How to make it wait longer if a worm hasn't finished entering the viewing area? Makes sense to gate
         #by how far the x axis extends? Need to return an extra variable to check for that?
         return length, width
-
-    def capture_fluorescent_images(self, worm_count):
-        #TODO: Return images with background pre-subtracted? Pretty sure I'm never working with the raw image anyway
-        #Only bugaboo there is when to save images as calibration, but could just set a flag here (as with analysis methods)
-        #Or could just return raw image and save them out as needed depending on if running calibration or not
-        
-        cyan_fluor_image = self.capture_image(self.cyan)
-        #self.save_image(cyan_fluor_image, 'cyan_worm', worm_count)
-        #cyan_subtracted = numpy.clip(cyan_fluor_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
-        #should return subtracted image with a floor of zero
-        
-        time.sleep(PICTURE_DELAY)
-
-        tritc_fluor_image = self.capture_image(self.green_yellow)
-        #self.save_image(tritc_fluor_image, 'tritc_worm', worm_count)
-        #tritc_subtracted = numpy.clip(tritc_fluor_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
-        #Need to make sure this is actually returning useable images and not just crushing values 
-
-        return cyan_fluor_image, tritc_fluor_image
 
     def analyze(self):
         """
@@ -399,30 +392,25 @@ class MicroDevice(threading.Thread):
     def main(self):    #Not entirely sure what this is
         self.device = iotool.IOTool("/dev/ttyMicrofluidics")
         return
-
-    """
-    def check_worm_size(self, worm_size, max_size, min_size):
-        #Is there a way I could write this function here so it didn't clutter the code bellow?
-        #Problem is that the bellow code is reliant on breaking the loop in the case that a worm is rejected--how to
-        #return the same effect in a function?
-        if worm_size >= max_size:
-            print('Detected doubled worm')
-            return 'big'
-        elif worm_size <= min_size:
-            print('Detectied small worm')
-            return 'small'
-        else:
-            return 'good'
-
-    """
     
-    def check_dead(self, cyan_subtracted, mask):
-       #Compares 95th percentile with median (or mean) fluorescence, in order
-       #to determine if animal has full wave of death fluorescence.
+    def acquire_worm_images(self):
+        """Captures bright field and fluorescent images.
+        """
         
-        #Should probably be called in analysis function? Will be interesting to
-        #see what percentage of worms end up coming throgh already dead on a given
-        #day or if the rate goes up over time.
+        bf_image = self.capture_image(self.bright)
+        time.sleep(PICTURE_DELAY)
+        cyan_image = self.capture_image(self.cyan)
+        time.sleep(PICTURE_DELAY)
+        tritc_image = self.capture_image(self.green_yellow)
+        #time.sleep(PICTURE_DELAY)
+        self.bright()
+        
+        return bf_image, cyan_image, tritc_image
+        
+    def check_dead(self, cyan_subtracted, mask):
+       """Compares 95th percentile with median (or mean) fluorescence, in order to determine if 
+       animal has full wave of death fluorescence.
+       """
         fluor_95th = self.find_95th_fluor_amount(cyan_subtracted, mask)
         fluor_median = self.find_median_fluor_amount(cyan_subtracted, mask)
 
@@ -483,7 +471,6 @@ class MicroDevice(threading.Thread):
             print(self.upper_threshold, self.lower_threshold)
         else:
             pass
-
 
     def sort(self, calibration):      #TODO: break this into general sorting function, put other relevant details in run func.
         """
@@ -569,8 +556,9 @@ class MicroDevice(threading.Thread):
                         elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
                             #Maybe include some param that says if a worm is too close to the edge, let it get to the center
                             
+                            bf_image, cyan_image, tritc_image = self.acquire_worm_images()
                             
-                            bf_subtracted = (abs(current_image.astype('int32') - self.background.astype('int32')))
+                            bf_subtracted = (abs(bf_image.astype('int32') - self.background.astype('int32')))
                                                         
                             worm_mask = self.worm_mask(bf_subtracted)
                             length, width = self.find_dimensions(worm_mask)
@@ -625,7 +613,6 @@ class MicroDevice(threading.Thread):
 
                             print('Worm positioned')
                             
-                            cyan_image, tritc_image = self.capture_fluorescent_images(worm_count)
                             cyan_subtracted = numpy.clip(cyan_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
                             tritc_subtracted = numpy.clip(tritc_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
                             
@@ -669,57 +656,26 @@ class MicroDevice(threading.Thread):
                                 sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False)
                                 print('Worm number: ' + str(worm_count))
 
-                            #Second size check to make sure new worms haven't shown up
-                            #TODO: can probably put this in function
-
+                            #Second size change to make sure new worm hasn't shown up:
+                            
                             post_analysis_image = self.capture_image(self.bright)
                             difference_between_worm_background = (abs(post_analysis_image.astype('int32') - self.background.astype('int32')))
                             worm_size_2 = self.size_of_worm(difference_between_worm_background)
                             
                             print('Size of worm after analysis: ' + str(worm_size_2))
-                            #TODO: Maybe instead of a second size threshold test, check if size has changed appreciably?
-
-                            if worm_size_2 > self.size_threshold:
-                                print('Detected Double Worm')
-                                self.save_image(current_image, 'doubled worm_analyze', worm_count)
+                            
+                            if self.check_size_change(worm_size, worm_size_2) == True:
+                                print('Detected appreciable size change')
+                                self.save_image(post_analysis_image, 'size_difference_analyze', worm_count)
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
-                                
-                                note = 'big'
-                                print('Doubled worms sorted Straight')
-                                time.sleep(0.5)
-                                test_counter += 1
-                                print('***')
-                                print('Times this feature has been useful: ' + str(test_counter))
-                                print('***')
-                                break
-
-                            elif worm_size_2 < self.min_worm_size:
-                                print('Worm was lost')
-                                self.save_image(current_image, 'small worm_analyze', worm_count)
-                                self.device_sort('straight', self.background, worm_count)
-                                direction = 'straight'
-                                note = 'small'
-                                time.sleep(0.5)
-                                test_counter += 1
-                                print('***')
-                                print('Times this feature has been useful: ' + str(test_counter))
-                                print('***')
+                                note = 'new_worm'
                                 break
 
                             #7 Sort worms
                             self.device_sort(direction, self.background, worm_count)
                             print('Worm ' + str(worm_count) + ' sorted ' + direction)
 
-                            #8 Move worms??
-                            #Old code here has an if statement to check if a reset is required, better place to put this?
-                            #Not sure self.cleared was ever being set as true
-
-
-                            #TODO: Add in 'reason'+measurements for worms that are rejected (e.g. for too small, doubled, etc.)
-                            #Could just save worm data array, then write out in subsequent function
-                            #This might be the easier way to save multiple files to different directories
-                            #Currently, worm_data is written worm by worm, and discarded immediately afterward
                             if calibration:
                                 note = 'calibration'
                             elif not calibration:
@@ -733,7 +689,7 @@ class MicroDevice(threading.Thread):
                             detected_image = current_image  #What is this doing?
 
                     worm_data = self.generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note)
-                    #TODO: Fix data generation across all classes
+                    #TODO: Fix data generation across all classes (if sort_param == list etc)
                     self.write_csv_line(self.summary_csv, worm_data)
                     print('Worm ' + str(worm_count) + ' data saved')
 
@@ -984,6 +940,8 @@ class Background(MicroDevice):
         """Sorts worms straight
         """
         
+        CYAN_EXPOSURE_TIME = 10 #Calibrating for Q35 imaging
+        
         self.bg_flag = True
 
         self.setup_csv(self.file_location, self.info)
@@ -1001,7 +959,7 @@ class Background(MicroDevice):
         #input for build hist?
 
         self.size_threshold = 7500   #hard coding sizes for now
-        self.min_worm_size = 500
+        self.min_worm_size = 1500
 
         self.sort(calibration = True)
 
