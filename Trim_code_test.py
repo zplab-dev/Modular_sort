@@ -19,6 +19,7 @@ import freeimage
 import threading
 import csv
 import requests
+from ris_widget import ris_widget
 
 IMAGE_SIZE = (1280, 1080)
 BOILER_AREA = (slice(530,1100), slice(530,590))
@@ -411,13 +412,13 @@ class MicroDevice(threading.Thread):
        """Compares 95th percentile with median (or mean) fluorescence, in order to determine if 
        animal has full wave of death fluorescence.
        """
-        fluor_95th = self.find_95th_fluor_amount(cyan_subtracted, mask)
-        fluor_median = self.find_median_fluor_amount(cyan_subtracted, mask)
-
-        if 2*fluor_median >= fluor_95th:
-            return True
-        else:
-            pass
+       fluor_95th = self.find_95th_fluor_amount(cyan_subtracted, mask)
+       fluor_median = self.find_median_fluor_amount(cyan_subtracted, mask)
+       
+       if 2*fluor_median >= fluor_95th:
+           return True
+       else:
+           pass
 
     def check_aspect_ratio(self, length, width):
         """Overwritten if sorting by worm length
@@ -501,6 +502,8 @@ class MicroDevice(threading.Thread):
         time_seen = time_start #Initial setting for time_seen before worm found
         message_sent = False
         
+        #rw = ris_widget.RisWidget() <was trying to play around with mask visualization
+        
         #2 Detect Worms
         try:
             while True:
@@ -561,13 +564,15 @@ class MicroDevice(threading.Thread):
                             bf_subtracted = (abs(bf_image.astype('int32') - self.background.astype('int32')))
                                                         
                             worm_mask = self.worm_mask(bf_subtracted)
-                            length, width = self.find_dimensions(worm_mask)
-
+                            
                             worm_size = self.size_of_worm(bf_subtracted)
 
                             print('Size of worm before sorting: ' + str(worm_size))
+                            
+                            #rw.image = worm_mask <riswidget seems to just bug out, how to get mask to show up?
 
                             #size_check = self.check_worm_size(worm_size, self.size_threshold, self.min_worm_size)
+                            
 
                             if worm_size > self.size_threshold:     #TODO: think on how to better decide size thresholds
                                 print('Detected Double Worm')
@@ -598,6 +603,8 @@ class MicroDevice(threading.Thread):
                                     sort_param = 'NA'
                                 time.sleep(0.5)
                                 break
+                            
+                            length, width = self.find_dimensions(worm_mask)
 
                             if self.check_aspect_ratio(length, width) == 'bent':
                                 #Should only call this function properly if running in length class
@@ -991,7 +998,7 @@ class Length(MicroDevice):
 
         length, width = self.find_dimensions(worm_mask)
 
-        print('Worm length = ' + length)
+        print('Worm length = ' + str(length))
         
         if calibration:
             direction = 'straight'
@@ -1022,6 +1029,7 @@ class Length(MicroDevice):
         self.boiler = boiler()
         self.reset = False
         self.bg_flag = False
+        
 
         worm_count = 0
         self.set_background_areas(worm_count)
