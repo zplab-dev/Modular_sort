@@ -80,7 +80,7 @@ class MicroDevice(threading.Thread):
     def __init__(self, exp_direct):
         """Initalizes the scope and device
         """
-        self.scope, scope_properties = scope_client.client_main()
+        self.scope = scope_client.ScopeClient()
         self.scope.camera.exposure_time = BRIGHT_FIELD_EXPOSURE_TIME
         self.scope.camera.readout_rate = '280 MHz'
         self.scope.camera.binning = '2x2'
@@ -616,6 +616,7 @@ class MicroDevice(threading.Thread):
                                 sort_param = 'NA'
                                 autofluorescence = 'NA'
                                 time.sleep(0.25)
+                                #Maybe for this save always in "length" measurement, but save as 'bent' if bent
                                 break
 
                             print('Worm positioned')
