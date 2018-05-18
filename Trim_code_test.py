@@ -753,6 +753,8 @@ class MicroDevice(threading.Thread):
 class GFP(MicroDevice):
 
     def setup_csv(self, file_location, info):
+        #TODO: add something to header line to let later reader know what kind of sort it was?
+        #What about including a note line for max size and min size? exposure time? etc?
         self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
         self.summary_csv = open(str(self.summary_csv_location), 'w')
         header = ['worm_number', 'size', 'red_autofluor', 'fluorescence', 'time', 'direction', 'note']
@@ -938,7 +940,7 @@ class Background(MicroDevice):
 
         return sort_param, direction
 
-    def generate_data(self, worm_count, autofluorescence, size, sort_param, time, direction, note):
+    def generate_data(self, worm_count, size, autofluorescence, sort_param, time, direction, note):
         """sort_param is a list here, necessitating specific function. Direction and note aren't really salient here.
         """
         worm_data = [worm_count, size] + sort_param + [time, direction, note]
