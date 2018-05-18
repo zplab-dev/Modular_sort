@@ -281,18 +281,21 @@ class MicroDevice(threading.Thread):
         #self.save_image(floored_image.astype('uint16'), 'worm_mask', True)
         a = (1*numpy.sum(mask.astype('bool')))
         return a
-    
+
     def check_size_change(self, size_before, size_after):
         #Construct new worm_mask
         #Compare with previous size
         #Should be within ~10% of original size, otherwise new worm may have shown up (or worm may have been lost)
         #Will this mess me up with worms that get imaged before being fully in frame? Need to also implement edge-closeness rule
-        
-        if abs(size_after - size_before) > 0.1 * size_before:
+
+        percent_change = abs(size_after - size_before)/size_before
+        if percent_change > 0.1 * size_before:
+            print('Percent change = ' + percent_change)
             return True
         else:
+            print('Percent change = ' + percent_change)
             pass
-        
+
 
     def worm_mask(self, subtracted_image):      #Make this more consistent/make everything go through this
         floored_image = backgroundSubtraction.percentile_floor(subtracted_image, .99)
@@ -304,7 +307,7 @@ class MicroDevice(threading.Thread):
             floored_image = ndimage.binary_erosion(floored_image)
         for i in range(3):
             floored_image = ndimage.binary_dilation(floored_image)
-        
+
         return floored_image
 
     def find_dimensions(self, mask):
@@ -393,11 +396,11 @@ class MicroDevice(threading.Thread):
     def main(self):    #Not entirely sure what this is
         self.device = iotool.IOTool("/dev/ttyMicrofluidics")
         return
-    
+
     def acquire_worm_images(self):
         """Captures bright field and fluorescent images.
         """
-        
+
         bf_image = self.capture_image(self.bright)
         time.sleep(PICTURE_DELAY)
         cyan_image = self.capture_image(self.cyan)
@@ -405,16 +408,16 @@ class MicroDevice(threading.Thread):
         tritc_image = self.capture_image(self.green_yellow)
         #time.sleep(PICTURE_DELAY)
         self.bright()
-        
+
         return bf_image, cyan_image, tritc_image
-        
+
     def check_dead(self, cyan_subtracted, mask):
-       """Compares 95th percentile with median (or mean) fluorescence, in order to determine if 
+       """Compares 95th percentile with median (or mean) fluorescence, in order to determine if
        animal has full wave of death fluorescence.
        """
        fluor_95th = self.find_95th_fluor_amount(cyan_subtracted, mask)
        fluor_median = self.find_median_fluor_amount(cyan_subtracted, mask)
-       
+
        if 2*fluor_median >= fluor_95th:
            return True
        else:
@@ -455,15 +458,15 @@ class MicroDevice(threading.Thread):
         #How to determine initial min and max sizes, to reject progeny/doubled worms without a good sample?
         self.upper_threshold = numpy.percentile(self.hist_values, 90)
         self.lower_threshold = numpy.percentile(self.hist_values, 10)
-        
+
         print('Fluorescence list = \n ' , str(self.hist_values))
         print('Avg =' + str(numpy.mean(self.hist_values)))
         print('90th percentile =' + str(self.upper_threshold))
         print('10th percentile =' + str(self.lower_threshold))
-            
+
 
         return self.hist_values, self.upper_threshold, self.lower_threshold
-    
+
     def update_hist(self, sort_param):
         if type(sort_param) != str:
             self.hist_values.append(sort_param)
@@ -501,21 +504,21 @@ class MicroDevice(threading.Thread):
         time_start = time.time()
         time_seen = time_start #Initial setting for time_seen before worm found
         message_sent = False
-        
+
         #rw = ris_widget.RisWidget() <was trying to play around with mask visualization
-        
+
         #2 Detect Worms
         try:
             while True:
 
                 cycle_count += 1
-                
+
                 if calibration and not self.bg_flag:
                     if len(self.hist_values) >= 100:   #Better way than to hard code 100 worms? passing too many arguments?
                         print('Finished initial histogram')
                         return self.hist_values
                         break
-                
+
                 time_without_worm = time.time()
                 if time_without_worm - time_seen > 120 and message_sent == False:
                     self.send_text(message='No worm for 2 min')
@@ -549,7 +552,7 @@ class MicroDevice(threading.Thread):
                             worm_size = 'NA'
                             autofluorescence = 'NA'
                             if self.bg_flag:
-                                sort_param = ['NA']
+                                sort_param = ['NA']*4
                             elif not self.bg_flag:
                                 sort_param = 'NA'
                             direction = 'straight'
@@ -558,21 +561,19 @@ class MicroDevice(threading.Thread):
 
                         elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
                             #Maybe include some param that says if a worm is too close to the edge, let it get to the center
-                            
-                            bf_image, cyan_image, tritc_image = self.acquire_worm_images()
-                            
-                            bf_subtracted = (abs(bf_image.astype('int32') - self.background.astype('int32')))
-                                                        
-                            worm_mask = self.worm_mask(bf_subtracted)
-                            
-                            worm_size = self.size_of_worm(bf_subtracted)
 
+                            bf_image, cyan_image, tritc_image = self.acquire_worm_images()
+                            bf_subtracted = (abs(bf_image.astype('int32') - self.background.astype('int32')))
+                            worm_mask = self.worm_mask(bf_subtracted)
+                            worm_size = self.size_of_worm(bf_subtracted)
                             print('Size of worm before sorting: ' + str(worm_size))
-                            
+
                             #rw.image = worm_mask <riswidget seems to just bug out, how to get mask to show up?
 
-                            #size_check = self.check_worm_size(worm_size, self.size_threshold, self.min_worm_size)
-                            
+                            cyan_subtracted = numpy.clip(cyan_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
+                            tritc_subtracted = numpy.clip(tritc_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
+
+                            autofluorescence = find_95th_fluor_amount(tritc_subtracted, worm_mask)
 
                             if worm_size > self.size_threshold:     #TODO: think on how to better decide size thresholds
                                 print('Detected Double Worm')
@@ -580,9 +581,8 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'big'
-                                autofluorescence = 'NA'
                                 if self.bg_flag:
-                                    sort_param = ['NA']
+                                    sort_param = ['NA']*4
                                 elif not self.bg_flag:
                                     sort_param = 'NA'
                                 print('Doubled worms sorted Straight')
@@ -596,14 +596,13 @@ class MicroDevice(threading.Thread):
                                 self.device_sort('straight', self.background, worm_count)
                                 direction = 'straight'
                                 note = 'small'
-                                autofluorescence = 'NA'
                                 if self.bg_flag:
-                                    sort_param = ['NA']
+                                    sort_param = ['NA']*4
                                 elif not self.bg_flag:
                                     sort_param = 'NA'
                                 time.sleep(0.5)
                                 break
-                            
+
                             length, width = self.find_dimensions(worm_mask)
 
                             if self.check_aspect_ratio(length, width) == 'bent':
@@ -614,17 +613,11 @@ class MicroDevice(threading.Thread):
                                 direction = 'straight'
                                 note = 'bent'
                                 sort_param = 'NA'
-                                autofluorescence = 'NA'
                                 time.sleep(0.25)
                                 #Maybe for this save always in "length" measurement, but save as 'bent' if bent
                                 break
 
                             print('Worm positioned')
-                            
-                            cyan_subtracted = numpy.clip(cyan_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
-                            tritc_subtracted = numpy.clip(tritc_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
-                            
-                            autofluorescence = numpy.percentile(tritc_subtracted[worm_mask], 95)
 
                             if self.check_dead(cyan_subtracted, worm_mask) == True:
                                 print('Worm ' + str(worm_count) + ' determined dead')
@@ -634,7 +627,7 @@ class MicroDevice(threading.Thread):
                                 direction = 'straight'
                                 note = 'dead'
                                 if self.bg_flag:
-                                    sort_param = ['NA']
+                                    sort_param = ['NA']*4
                                 elif not self.bg_flag:
                                     sort_param = 'NA'
                                 time.sleep(0.5)
@@ -665,13 +658,13 @@ class MicroDevice(threading.Thread):
                                 print('Worm number: ' + str(worm_count))
 
                             #Second size change to make sure new worm hasn't shown up:
-                            
+
                             post_analysis_image = self.capture_image(self.bright)
                             difference_between_worm_background = (abs(post_analysis_image.astype('int32') - self.background.astype('int32')))
                             worm_size_2 = self.size_of_worm(difference_between_worm_background)
-                            
+
                             print('Size of worm after analysis: ' + str(worm_size_2))
-                            
+
                             if self.check_size_change(worm_size, worm_size_2) == True:
                                 print('Detected appreciable size change')
                                 self.save_image(post_analysis_image, 'size_difference_analyze', worm_count)
@@ -744,7 +737,7 @@ class MicroDevice(threading.Thread):
         self.sort(calibration = False)
 
         self.summary_csv.close()
-        
+
     def manual_set_up(self):
         self.hist_values = list(input('Histogram values: '))
         self.upper_threshold = numpy.percentile(self.hist_values, 90)
@@ -807,7 +800,7 @@ class GFP(MicroDevice):
 
         worm_data = [worm_count, size, sort_param, time, direction, note]
         return worm_data
-    
+
     def go(self):
 
         self.setup_csv(self.file_location, self.info)
@@ -828,9 +821,9 @@ class GFP(MicroDevice):
         self.min_worm_size = 3000
 
         self.build_hist()
-        
+
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-        
+
         self.sort(calibration = False)
 
         self.summary_csv.close()
@@ -854,7 +847,7 @@ class Autofluorescence(MicroDevice):
 
         worm_fluor = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
         print('Autofluorescence value = ' + str(worm_fluor))
-        
+
         if calibration:
             self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
             self.save_image(tritc_image, 'calibration_worm_fluor', worm_count)
@@ -898,9 +891,9 @@ class Autofluorescence(MicroDevice):
         self.min_worm_size = 3000
 
         self.build_hist()
-        
+
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-        
+
         self.sort(calibration = False)
 
         self.summary_csv.close()
@@ -949,9 +942,9 @@ class Background(MicroDevice):
     def nosort(self):
         """Sorts worms straight
         """
-        
+
         CYAN_EXPOSURE_TIME = 10 #Calibrating for Q35 imaging
-        
+
         self.bg_flag = True
 
         self.setup_csv(self.file_location, self.info)
@@ -986,7 +979,7 @@ class Length(MicroDevice):
 
     def check_aspect_ratio(self, length, width):
         """Takes length and width measurements from find_dimensions and returns whether or not the worm is likely
-        to have been folded over, meaning it's length measurement is not accurate. Straight worms typically have 
+        to have been folded over, meaning it's length measurement is not accurate. Straight worms typically have
         an "aspect ratio" (lengt/width) of >=6.
         """
         aspect_ratio = length/width
@@ -1002,7 +995,7 @@ class Length(MicroDevice):
         length, width = self.find_dimensions(worm_mask)
 
         print('Worm length = ' + str(length))
-        
+
         if calibration:
             direction = 'straight'
             return length, direction
@@ -1032,7 +1025,7 @@ class Length(MicroDevice):
         self.boiler = boiler()
         self.reset = False
         self.bg_flag = False
-        
+
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -1044,23 +1037,11 @@ class Length(MicroDevice):
         self.min_worm_size = 3000
 
         self.build_hist()
-        
+
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-        
+
         self.sort(calibration = False)
 
         self.summary_csv.close()
 
 #class Q35(MicroDevice):
-    
-
-    
-
-            
-
-
-
-
-
-
-
