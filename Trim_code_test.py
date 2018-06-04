@@ -476,6 +476,9 @@ class MicroDevice(threading.Thread):
         else:
             pass
 
+    #def check_metrics(self, cyan_subtracted, worm_mask):
+
+
     def sort(self, calibration):      #TODO: break this into general sorting function, put other relevant details in run func.
         """
         Function that starts the device running with a given purpose
@@ -759,29 +762,21 @@ class GFP(MicroDevice):
         self.size_threshold = int(input('Max size threshold = '))
         self.min_worm_size = int(input('Min size threshold = '))
 
-    def analyze(self, background, worm_image, worm_count, calibration=False):
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
         """Class-specific method to determine measurement being sorted.
         Takes background image, bf image of worm, worm count, and returns measurement + sort direction
         Saves fluorescent (GFP) image
         """
-        gfp_fluor_image = self.capture_image(self.cyan)
-        gfp_subtracted = abs(gfp_fluor_image.astype('int32') - self.cyan_background.astype('int32'))
-        worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
-        worm_mask = self.worm_mask(worm_subtracted).astype('bool')      #Old function returned as bool automatically, see if bool works with size-finding
 
+        #Relevant param is fluor GFP (cyan)
         worm_fluor = self.find_95th_fluor_amount(gfp_subtracted, worm_mask)
         print('GFP value = ' + str(worm_fluor))
 
         if calibration:
-            self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
-            #astype('uint8')*255
-            self.save_image(gfp_fluor_image, 'calibration_worm_fluor', worm_count)
             direction = 'straight'
             return worm_fluor, direction
 
         elif not calibration:
-            self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
-            self.save_image(gfp_fluor_image, 'fluor_gfp', worm_count)
 
             if worm_fluor >= self.upper_threshold:
                 direction = 'up'
@@ -790,15 +785,15 @@ class GFP(MicroDevice):
             else:
                 direction = 'straight'
 
-        return worm_fluor, direction
+            return worm_fluor, direction
 
-    def generate_data(self, worm_count, size, sort_param, time, direction, note):
+    def generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         """Function for returning the right csv lin config for a given class.
         Here, returns the number, size, fluorescence, time between worms, directions, and note (hist or sort)
         sort_param = GFP fluorescence
         """
 
-        worm_data = [worm_count, size, sort_param, time, direction, note]
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
 
     def go(self):
@@ -837,26 +832,18 @@ class Autofluorescence(MicroDevice):
         header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
 
-    def analyze(self, background, worm_image, worm_count, calibration=False):
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
         """
         """
-        tritc_image = self.capture_image(self.green_yellow)
-        tritc_subtracted = abs(tritc_image.astype('int32')- self.green_yellow_background.astype('int32'))
-        worm_subtracted = abs(worm_image.astype('int32') - background.astype('int32'))
-        worm_mask = self.worm_mask(worm_subtracted).astype('bool')      #Old function returned as bool automatically, see if bool works with size-finding
 
         worm_fluor = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
         print('Autofluorescence value = ' + str(worm_fluor))
 
         if calibration:
-            self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
-            self.save_image(tritc_image, 'calibration_worm_fluor', worm_count)
             direction = 'straight'
             return worm_fluor, direction
 
         elif not calibration:
-            self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
-            self.save_image(tritc_image, 'red_autofluor', worm_count)
 
             if worm_fluor >= self.upper_threshold:
                 direction = 'up'
@@ -867,8 +854,8 @@ class Autofluorescence(MicroDevice):
 
         return worm_fluor, direction
 
-    def generate_data(self, worm_count, size, sort_param, time, direction, note):
-        worm_data = [worm_count, size, sort_param, time, direction, note]
+    def generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+        worm_data = [worm_count, worm_size, sort_param, time_between_worms, direction, note]
         return worm_data
 
     def go(self):
@@ -933,10 +920,10 @@ class Background(MicroDevice):
 
         return sort_param, direction
 
-    def generate_data(self, worm_count, size, autofluorescence, sort_param, time, direction, note):
+    def generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         """sort_param is a list here, necessitating specific function. Direction and note aren't really salient here.
         """
-        worm_data = [worm_count, size] + sort_param + [time, direction, note]
+        worm_data = [worm_count, worm_size] + sort_param + [time_between_worms, direction, note]
         return worm_data
 
     def nosort(self):
@@ -1010,10 +997,10 @@ class Length(MicroDevice):
 
         return length, direction
 
-    def generate_data(self, worm_count, size, autofluorescence, sort_param, time, direction, note):
+    def generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         #Realizing this could be generalized as sort param is always a single var or a list
         #Just write as if type(sort_param) =! list
-        worm_data = [worm_count, size, autofluorescence, sort_param, time, direction, note]
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time, direction, note]
         return worm_data
 
     def go(self):
