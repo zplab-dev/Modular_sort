@@ -289,11 +289,11 @@ class MicroDevice(threading.Thread):
         #Will this mess me up with worms that get imaged before being fully in frame? Need to also implement edge-closeness rule
 
         percent_change = abs(size_after - size_before)/size_before
-        if percent_change > 0.1 * size_before:
-            print('Percent change = ' + percent_change)
+        if percent_change > 0.2 * size_before:
+            print('Percent change = ' + str(percent_change))
             return True
         else:
-            print('Percent change = ' + percent_change)
+            print('Percent change = ' + str(percent_change))
             pass
 
 
@@ -357,6 +357,7 @@ class MicroDevice(threading.Thread):
                 self.reset = False
                 time.sleep(SORTING_INTERVAL)
                 self.device.execute(STRAIGHT_CHANNEL_PRESSURE)
+                #TODO: I don't actually want to iterate this unless it's a "good" worm, currently going up for all worms sorted straight
                 self.straight_count += 1
 
     def check_cleared(self, background, worm_count):        #TODO: Fix force reset option, because flag never triggers
@@ -576,7 +577,7 @@ class MicroDevice(threading.Thread):
                             cyan_subtracted = numpy.clip(cyan_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
                             tritc_subtracted = numpy.clip(tritc_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
 
-                            autofluorescence = find_95th_fluor_amount(tritc_subtracted, worm_mask)
+                            autofluorescence = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
 
                             if worm_size > self.size_threshold:     #TODO: think on how to better decide size thresholds
                                 print('Detected Double Worm')
@@ -648,6 +649,7 @@ class MicroDevice(threading.Thread):
                                 if not self.bg_flag and type(sort_param) != str:
                                     self.hist_values.append(sort_param)  #building initial histogram
                                     #How to make this generalizable if not using a histogram?
+                                    print('Good calibration worms: ' + str(len(self.hist_values)))
                             elif not calibration:
                                 #5 Save image
                                 self.save_image(current_image, 'positioned', worm_count)    #TODO: better names?
@@ -769,7 +771,7 @@ class GFP(MicroDevice):
         """
 
         #Relevant param is fluor GFP (cyan)
-        worm_fluor = self.find_95th_fluor_amount(gfp_subtracted, worm_mask)
+        worm_fluor = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
         print('GFP value = ' + str(worm_fluor))
 
         if calibration:
@@ -787,7 +789,7 @@ class GFP(MicroDevice):
 
             return worm_fluor, direction
 
-    def generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         """Function for returning the right csv lin config for a given class.
         Here, returns the number, size, fluorescence, time between worms, directions, and note (hist or sort)
         sort_param = GFP fluorescence
