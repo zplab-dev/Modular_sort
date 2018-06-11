@@ -465,7 +465,6 @@ class MicroDevice(threading.Thread):
         print('90th percentile =' + str(self.upper_threshold))
         print('10th percentile =' + str(self.lower_threshold))
 
-
         return self.hist_values, self.upper_threshold, self.lower_threshold
 
     def update_hist(self, sort_param):
@@ -477,7 +476,51 @@ class MicroDevice(threading.Thread):
         else:
             pass
 
-    #def check_metrics(self, cyan_subtracted, worm_mask):
+    def check_metrics(self, current_image, worm_count, size1, size2, cyan_subtracted, worm_mask):
+        """Checks all metrics that would cause a worm to be rejected in the sort,
+        i.e. size, death fluorescence, aspect ratio (if sorting by length).
+        How to include 2x size check to make sure worm didn't change too much
+        (new worm showing up)? (Need to check images for new worms showing up to see if that's working)
+
+        Returns note, which explains if worm was deemed good for sorting or explains
+        reason why worm was rejected.
+        """
+
+        #Worm size when imaged:
+        if size1 > self.size_threshold:     #TODO: think on how to better decide size thresholds
+            print('Detected double worm')
+            self.save_image(current_image, 'doubled worm_analyze', worm_count)
+            return 'doubled_worm'
+        elif size1 < self.min_worm_size:     #TODO: Make sure I'm not rejecting slow, big worms
+            print('Detected small worm')
+            self.save_image(current_image, 'small worm_analyze', worm_count)
+            return 'small'
+
+        #Death fluorescence:    TODO: How often is this getting called and is it correct?
+        elif self.check_dead(cyan_subtracted, worm_mask) == True:
+            print('Worm ' + str(worm_count) + ' determined dead')
+            self.save_image(current_image, 'dead_worm', worm_count)
+            self.save_image(cyan_image, 'dead_worm_cyan', worm_count)
+            return 'dead'
+
+        #Aspect ratio
+        length, width = self.find_dimensions(worm_mask)
+        elif self.check_aspect_ratio(length, width) == 'bent':
+            #Function should only be called if running from length class
+            print('Worm bent over')
+            self.save_image(current_image, 'bent_worm', worm_count)
+            return 'bent'
+
+        #Size change (New worm appeared or old worm dissapeared)
+        elif self.check_size_change(size1, size2) == True:
+            print('Detected appreciable size change')
+            print('****Feature was useful****')
+            self.save_image(post_analysis_image, 'size_difference_analyze', worm_count)
+            return 'new_worm'
+
+        #Passed all?
+        else:
+            return 'sort'
 
 
     def sort(self, calibration):      #TODO: break this into general sorting function, put other relevant details in run func.
@@ -517,7 +560,7 @@ class MicroDevice(threading.Thread):
 
                 cycle_count += 1
 
-                if calibration and not self.bg_flag:
+                if calibration:
                     if len(self.hist_values) >= 100:   #Better way than to hard code 100 worms? passing too many arguments?
                         print('Finished initial histogram')
                         return self.hist_values
@@ -550,16 +593,9 @@ class MicroDevice(threading.Thread):
                     while True:
                         current_image = self.capture_image(self.bright)
                         if self.lost_worm(current_image, self.background):  #This doesnt seem to get called often
-                            print('Worm ' + str(worm_count) + ' was lost')
+                            print('Worm was lost')
                             self.device.execute(SEWER_CHANNEL_PRESSURE)
                             time.sleep(.1)
-                            worm_size = 'NA'
-                            autofluorescence = 'NA'
-                            if self.bg_flag:
-                                sort_param = ['NA']*4
-                            elif not self.bg_flag:
-                                sort_param = 'NA'
-                            direction = 'straight'
                             note = 'lost'
                             break
 
@@ -579,63 +615,7 @@ class MicroDevice(threading.Thread):
 
                             autofluorescence = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
 
-                            if worm_size > self.size_threshold:     #TODO: think on how to better decide size thresholds
-                                print('Detected Double Worm')
-                                self.save_image(current_image, 'doubled worm_analyze', worm_count)
-                                self.device_sort('straight', self.background, worm_count)
-                                direction = 'straight'
-                                note = 'big'
-                                if self.bg_flag:
-                                    sort_param = ['NA']*4
-                                elif not self.bg_flag:
-                                    sort_param = 'NA'
-                                print('Doubled worms sorted Straight')
-                                time.sleep(0.5)
-                                break
-
-                            elif worm_size < self.min_worm_size:     #TODO: look back and decide if problem
-                                                                     #Probably actually rejecting large (slow) worms here
-                                print('Detected small worm')
-                                self.save_image(current_image, 'small worm_analyze', worm_count)
-                                self.device_sort('straight', self.background, worm_count)
-                                direction = 'straight'
-                                note = 'small'
-                                if self.bg_flag:
-                                    sort_param = ['NA']*4
-                                elif not self.bg_flag:
-                                    sort_param = 'NA'
-                                time.sleep(0.5)
-                                break
-
-                            length, width = self.find_dimensions(worm_mask)
-
-                            if self.check_aspect_ratio(length, width) == 'bent':
-                                #Should only call this function properly if running in length class
-                                print('Worm doubled over')
-                                self.save_image(current_image, 'bent_worm', worm_count)
-                                self.device_sort('straight', self.background, worm_count)
-                                direction = 'straight'
-                                note = 'bent'
-                                sort_param = 'NA'
-                                time.sleep(0.25)
-                                #Maybe for this save always in "length" measurement, but save as 'bent' if bent
-                                break
-
                             print('Worm positioned')
-
-                            if self.check_dead(cyan_subtracted, worm_mask) == True:
-                                print('Worm ' + str(worm_count) + ' determined dead')
-                                self.save_image(current_image, 'dead_worm', worm_count)
-                                self.save_image(cyan_image, 'dead_worm_cyan', worm_count)
-                                self.device_sort('straight', self.background, worm_count)
-                                direction = 'straight'
-                                note = 'dead'
-                                if self.bg_flag:
-                                    sort_param = ['NA']*4
-                                elif not self.bg_flag:
-                                    sort_param = 'NA'
-                                time.sleep(0.5)
-                                break
 
                             if calibration:
                                 self.save_image(current_image, 'calibration_worm', worm_count)
@@ -646,10 +626,10 @@ class MicroDevice(threading.Thread):
 
                                 sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = True)
                                 print('Calibration worm number: ' + str(worm_count))
-                                if not self.bg_flag and type(sort_param) != str:
-                                    self.hist_values.append(sort_param)  #building initial histogram
+                                self.hist_values.append(sort_param)  #building initial histogram
                                     #How to make this generalizable if not using a histogram?
-                                    print('Good calibration worms: ' + str(len(self.hist_values)))
+                                print('Good calibration worms: ' + str(len(self.hist_values)))
+
                             elif not calibration:
                                 #5 Save image
                                 self.save_image(current_image, 'positioned', worm_count)    #TODO: better names?
@@ -658,46 +638,48 @@ class MicroDevice(threading.Thread):
                                 self.save_image(tritc_image, 'tritc_worm', worm_count)
                                 print('Images saved')
 
-                                #6 Analyze worms
                                 sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False)
                                 print('Worm number: ' + str(worm_count))
 
                             #Second size change to make sure new worm hasn't shown up:
-
                             post_analysis_image = self.capture_image(self.bright)
                             difference_between_worm_background = (abs(post_analysis_image.astype('int32') - self.background.astype('int32')))
                             worm_size_2 = self.size_of_worm(difference_between_worm_background)
 
                             print('Size of worm after analysis: ' + str(worm_size_2))
 
-                            if self.check_size_change(worm_size, worm_size_2) == True:
-                                print('Detected appreciable size change')
-                                self.save_image(post_analysis_image, 'size_difference_analyze', worm_count)
-                                self.device_sort('straight', self.background, worm_count)
+                            note = self.check_metrics(current_image, worm_count, size1, size2, cyan_subtracted, worm_mask)
+
+                            if note != 'sort':
                                 direction = 'straight'
-                                note = 'new_worm'
-                                break
+                                #sort straight if worm is bad for some reason
+                            elif note == 'sort' and calibration == 'True':
+                                direction = 'striahgt'
+                                note = 'calibration'
+                                #note worms used in initial histogram as calibration worms
+                            elif note == 'sort' and calibration == 'False':
+                                #if worm is deemed good and sort is running, note is sort
+                                pass
 
                             #7 Sort worms
                             self.device_sort(direction, self.background, worm_count)
                             print('Worm ' + str(worm_count) + ' sorted ' + direction)
 
-                            if calibration:
-                                note = 'calibration'
-                            elif not calibration:
-                                note = 'sort'
-                                print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
-                                self.update_hist(sort_param)
-
+                        elif not calibration and note == 'sort':
+                            print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
+                            self.update_hist(sort_param)
                             break
 
                         else:
                             detected_image = current_image  #What is this doing?
 
-                    worm_data = self.generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note)
+                    if note != 'lost':
+                        #No need to save data for lost worms, and I don't think we were losing many anyway
+                        worm_data = self.generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note)
                     #TODO: Fix data generation across all classes (if sort_param == list etc)
                     self.write_csv_line(self.summary_csv, worm_data)
                     print('Worm ' + str(worm_count) + ' data saved')
+                    print('_______________________________________________________________________________')
 
                     if worm_count % 100 == 0 and worm_count != 0:   #Resets background every 100 worms
                         self.reset_background(worm_count)
@@ -806,7 +788,6 @@ class GFP(MicroDevice):
 
         self.boiler = boiler()
         self.reset = False
-        self.bg_flag = False
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -868,7 +849,6 @@ class Autofluorescence(MicroDevice):
 
         self.boiler = boiler()
         self.reset = False
-        self.bg_flag = False
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -934,7 +914,6 @@ class Background(MicroDevice):
 
         CYAN_EXPOSURE_TIME = 10 #Calibrating for Q35 imaging
 
-        self.bg_flag = True
 
         self.setup_csv(self.file_location, self.info)
 
@@ -1013,7 +992,6 @@ class Length(MicroDevice):
 
         self.boiler = boiler()
         self.reset = False
-        self.bg_flag = False
 
 
         worm_count = 0
