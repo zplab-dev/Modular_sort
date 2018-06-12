@@ -628,7 +628,7 @@ class MicroDevice(threading.Thread):
                             print('Worm positioned')
 
                             if calibration:
-                                self.save_image(current_image, 'calibration_worm', worm_count)
+                                self.save_image(current_image, 'calibration_brightfield_worm', worm_count)
                                 self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
                                 self.save_image(cyan_image, 'calibration_cyan_worm', worm_count)
                                 self.save_image(tritc_image, 'calibration_tritc_worm', worm_count)
@@ -639,7 +639,7 @@ class MicroDevice(threading.Thread):
 
                             elif not calibration:
                                 #5 Save image
-                                self.save_image(current_image, 'positioned', worm_count)    #TODO: better names?
+                                self.save_image(current_image, 'brightfield_worm', worm_count)    #TODO: better names?
                                 self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
                                 self.save_image(cyan_image, 'cyan_worm', worm_count)
                                 self.save_image(tritc_image, 'tritc_worm', worm_count)
