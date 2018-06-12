@@ -201,6 +201,7 @@ class MicroDevice(threading.Thread):
                             PUSH_CHANNEL_PRESSURE)
 
     def save_image(self, image, name, worm_count):
+        #Directory system to catagorize images?
         save_location = str(self.file_location) + '/' + name + '_' + str(worm_count) + '.png'
         freeimage.write(image, save_location, flags=freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
 
@@ -359,6 +360,8 @@ class MicroDevice(threading.Thread):
                 self.device.execute(STRAIGHT_CHANNEL_PRESSURE)
                 #TODO: I don't actually want to iterate this unless it's a "good" worm, currently going up for all worms sorted straight
                 self.straight_count += 1
+        else: 
+            raise Exception('Direction "' + str(direction) + '" not recognized')
 
     def check_cleared(self, background, worm_count):        #TODO: Fix force reset option, because flag never triggers
                                                             #how to make this better? Reject worm after too long?
@@ -485,7 +488,8 @@ class MicroDevice(threading.Thread):
         Returns note, which explains if worm was deemed good for sorting or explains
         reason why worm was rejected.
         """
-
+        length, width = self.find_dimensions(worm_mask)
+        
         #Worm size when imaged:
         if size1 > self.size_threshold:     #TODO: think on how to better decide size thresholds
             print('Detected double worm')
@@ -500,11 +504,10 @@ class MicroDevice(threading.Thread):
         elif self.check_dead(cyan_subtracted, worm_mask) == True:
             print('Worm ' + str(worm_count) + ' determined dead')
             self.save_image(current_image, 'dead_worm', worm_count)
-            self.save_image(cyan_image, 'dead_worm_cyan', worm_count)
+            self.save_image(cyan_subtracted, 'dead_worm_cyan', worm_count)
             return 'dead'
 
         #Aspect ratio
-        length, width = self.find_dimensions(worm_mask)
         elif self.check_aspect_ratio(length, width) == 'bent':
             #Function should only be called if running from length class
             print('Worm bent over')
@@ -597,16 +600,23 @@ class MicroDevice(threading.Thread):
                             self.device.execute(SEWER_CHANNEL_PRESSURE)
                             time.sleep(.1)
                             note = 'lost'
+                            worm_count -= 1
                             break
 
-                        elif self.positioned_worm(current_image, detected_image):   #Does this do it's job? Sometimes rejects big worms
+                        elif self.positioned_worm(current_image, detected_image):
                             #Maybe include some param that says if a worm is too close to the edge, let it get to the center
 
                             bf_image, cyan_image, tritc_image = self.acquire_worm_images()
                             bf_subtracted = (abs(bf_image.astype('int32') - self.background.astype('int32')))
                             worm_mask = self.worm_mask(bf_subtracted)
-                            worm_size = self.size_of_worm(bf_subtracted)
-                            print('Size of worm before sorting: ' + str(worm_size))
+                            size1 = self.size_of_worm(bf_subtracted)
+                            #Used as worm size but also for comparison later
+                            print('Size of worm before sorting: ' + str(size1))
+                            
+                            if size1 == 0: #Dumb way of fixing empty array problem, since size thresholds being checked later
+                                print('No worm')
+                                worm_count -= 1
+                                break
 
                             #rw.image = worm_mask <riswidget seems to just bug out, how to get mask to show up?
 
@@ -626,9 +636,6 @@ class MicroDevice(threading.Thread):
 
                                 sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = True)
                                 print('Calibration worm number: ' + str(worm_count))
-                                self.hist_values.append(sort_param)  #building initial histogram
-                                    #How to make this generalizable if not using a histogram?
-                                print('Good calibration worms: ' + str(len(self.hist_values)))
 
                             elif not calibration:
                                 #5 Save image
@@ -644,41 +651,47 @@ class MicroDevice(threading.Thread):
                             #Second size change to make sure new worm hasn't shown up:
                             post_analysis_image = self.capture_image(self.bright)
                             difference_between_worm_background = (abs(post_analysis_image.astype('int32') - self.background.astype('int32')))
-                            worm_size_2 = self.size_of_worm(difference_between_worm_background)
+                            size2 = self.size_of_worm(difference_between_worm_background)
 
-                            print('Size of worm after analysis: ' + str(worm_size_2))
+                            print('Size of worm after analysis: ' + str(size2))
 
                             note = self.check_metrics(current_image, worm_count, size1, size2, cyan_subtracted, worm_mask)
+                            
 
                             if note != 'sort':
                                 direction = 'straight'
                                 #sort straight if worm is bad for some reason
-                            elif note == 'sort' and calibration == 'True':
-                                direction = 'striahgt'
-                                note = 'calibration'
-                                #note worms used in initial histogram as calibration worms
-                            elif note == 'sort' and calibration == 'False':
+                            elif calibration and note == 'sort':
+                                direction = 'straight'
+                                note = 'calibration' #note worms used in initial histogram as calibration worms
+                                self.hist_values.append(sort_param)  #building initial histogram
+                                print('Good calibration worms: ' + str(len(self.hist_values)))
+                            elif not calibration and note == 'sort':
                                 #if worm is deemed good and sort is running, note is sort
                                 pass
-
+                            
+                            print('Note = ' + str(note))
+                        
                             #7 Sort worms
                             self.device_sort(direction, self.background, worm_count)
                             print('Worm ' + str(worm_count) + ' sorted ' + direction)
 
-                        elif not calibration and note == 'sort':
-                            print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
-                            self.update_hist(sort_param)
-                            break
+                            if not calibration and note == 'sort':
+                                print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
+                                self.update_hist(sort_param)
+                            
+                            break   #Neccessary to break while loop
 
                         else:
-                            detected_image = current_image  #What is this doing?
-
+                            detected_image = current_image  #What is this doing? Pass back to front?
+                    
                     if note != 'lost':
                         #No need to save data for lost worms, and I don't think we were losing many anyway
-                        worm_data = self.generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note)
-                    #TODO: Fix data generation across all classes (if sort_param == list etc)
-                    self.write_csv_line(self.summary_csv, worm_data)
-                    print('Worm ' + str(worm_count) + ' data saved')
+                        worm_data = self.generate_data(worm_count, size1, autofluorescence, sort_param, time_between_worms, direction, note)
+                        #TODO: Fix data generation across all classes (if sort_param == list etc)
+                        self.write_csv_line(self.summary_csv, worm_data)
+                        print('Worm ' + str(worm_count) + ' data saved')
+                    
                     print('_______________________________________________________________________________')
 
                     if worm_count % 100 == 0 and worm_count != 0:   #Resets background every 100 worms
