@@ -200,10 +200,40 @@ class MicroDevice(threading.Thread):
                             UP_CHANNEL_PRESSURE, DOWN_CHANNEL_PRESSURE,
                             PUSH_CHANNEL_PRESSURE)
 
-    def save_image(self, image, name, worm_count):
-        #Directory system to catagorize images?
-        save_location = str(self.file_location) + '/' + name + '_' + str(worm_count) + '.png'
-        freeimage.write(image, save_location, flags=freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
+    def save_image(self, image, name, worm_count, _type=None):
+        """Saves image to directory provided when script is first loaded. 
+           If type is specified, saves to subdirectory to more easily search through images
+           types: bf (brightfield), cyan (GFP), tritc (autofluor), dead, small,
+           big, and bent.
+           """
+        if _type is not None:   #Type given -> save to subdirectory
+            save_location = str(self.dir_dict[_type]) + '/' + name + '_' + str(worm_count) + '.png'
+            freeimage.write(image, save_location, flags = freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
+        else:   #Otherwise just save to sort folder
+            save_location = str(self.file_location) + '/' + name + '_' + str(worm_count) + '.png'
+            freeimage.write(image, save_location, flags=freeimage.IO_FLAGS.PNG_Z_BEST_SPEED)
+
+    def setup_dirs(self):
+        self.bf_dir = self.file_location.joinpath('brightfield_images')
+        self.mask_dir = self.file_location.joinpath('mask_images')
+        self.cyan_dir = self.file_location.joinpath('GFP_images')
+        self.tritc_dir = self.file_location.joinpath('autofluor_images')
+        self.dead_dir = self.file_location.joinpath('dead_imgaes')
+        self.smol_dir = self.file_location.joinpath('small_worm_images')
+        self.big_dir = self.file_location.joinpath('double_worm_images')
+        self.bent_dir = self.file_location.joinpath('bent_worm_images')
+        self.dir_dict = {'bf' : self.bf_dir,
+                         'mask' : self.mask_dir,
+                         'cyan' : self.cyan_dir,
+                         'tritc' : self.tritc_dir,
+                         'dead' : self.dead_dir,
+                         'small' : self.smol_dir,
+                         'big' : self.big_dir,
+                         'bent': self.bent_dir}
+
+        for key in self.dir_dict:
+            self.dir_dict[key].mkdir(mode=0o777, parents=True, exist_ok=True)
+
 
     def set_background_areas(self, worm_count):
         self.set_bf_background(worm_count)
@@ -227,15 +257,15 @@ class MicroDevice(threading.Thread):
         self.detect_background = numpy.sum(subtracted[DETECTION_AREA])
         self.positioned_background = numpy.sum(subtracted[POSITION_AREA])
         self.clear_background = numpy.sum(subtracted[CLEARING_AREA])
-        self.save_image(self.background, 'brightfield_background', worm_count)
+        self.save_image(self.background, 'brightfield_background', worm_count, _type = 'bf')
 
     def set_cyan_background(self, worm_count):
         self.cyan_background = self.capture_image(self.cyan)
-        self.save_image(self.cyan_background, 'cyan_background', worm_count)
+        self.save_image(self.cyan_background, 'cyan_background', worm_count, _type = 'cyan')
 
     def set_green_yellow_background(self, worm_count):
         self.green_yellow_background = self.capture_image(self.green_yellow)
-        self.save_image(self.green_yellow_background, 'green_yellow_background', worm_count)
+        self.save_image(self.green_yellow_background, 'green_yellow_background', worm_count, _type = 'tritc')
 
     def reset_background(self, worm_count):
         self.set_background_areas(worm_count)
@@ -493,32 +523,33 @@ class MicroDevice(threading.Thread):
         #Worm size when imaged:
         if size1 > self.size_threshold:     #TODO: think on how to better decide size thresholds
             print('Detected double worm')
-            self.save_image(current_image, 'doubled worm_analyze', worm_count)
+            self.save_image(current_image, 'doubled_worm_analyze', worm_count, _type = 'big')
             return 'doubled_worm'
         elif size1 < self.min_worm_size:     #TODO: Make sure I'm not rejecting slow, big worms
             print('Detected small worm')
-            self.save_image(current_image, 'small worm_analyze', worm_count)
+            self.save_image(current_image, 'small_worm_analyze', worm_count, _type = 'small')
             return 'small'
 
         #Death fluorescence:    TODO: How often is this getting called and is it correct?
         elif self.check_dead(cyan_subtracted, worm_mask) == True:
             print('Worm ' + str(worm_count) + ' determined dead')
-            self.save_image(current_image, 'dead_worm', worm_count)
-            self.save_image(cyan_subtracted, 'dead_worm_cyan', worm_count)
+            self.save_image(current_image, 'dead_worm', worm_count, _type = 'dead')
+            self.save_image(cyan_subtracted, 'dead_worm_cyan', worm_count, _type = 'dead')
             return 'dead'
 
         #Aspect ratio
         elif self.check_aspect_ratio(length, width) == 'bent':
             #Function should only be called if running from length class
             print('Worm bent over')
-            self.save_image(current_image, 'bent_worm', worm_count)
+            self.save_image(current_image, 'bent_worm', worm_count, _type = 'bent')
             return 'bent'
 
         #Size change (New worm appeared or old worm dissapeared)
         elif self.check_size_change(size1, size2) == True:
             print('Detected appreciable size change')
             print('****Feature was useful****')
-            self.save_image(post_analysis_image, 'size_difference_analyze', worm_count)
+            self.save_image(post_analysis_image, 'size_difference_analyze', worm_count, _type = 'big')
+            #Filing these with worms above size threshold for now because i'm not sure how often this gets used
             return 'new_worm'
 
         #Passed all?
@@ -628,10 +659,10 @@ class MicroDevice(threading.Thread):
                             print('Worm positioned')
 
                             if calibration:
-                                self.save_image(current_image, 'calibration_brightfield_worm', worm_count)
-                                self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count)
-                                self.save_image(cyan_image, 'calibration_cyan_worm', worm_count)
-                                self.save_image(tritc_image, 'calibration_tritc_worm', worm_count)
+                                self.save_image(current_image, 'calibration_brightfield_worm', worm_count, _type = 'bf')
+                                self.save_image(worm_mask.astype('uint8')*255, 'calibration_worm_mask', worm_count, _type = 'mask')
+                                self.save_image(cyan_image, 'calibration_cyan_worm', worm_count, _type = 'cyan')
+                                self.save_image(tritc_image, 'calibration_tritc_worm', worm_count, _type = 'tritc')
                                 print('Images saved')
 
                                 sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = True)
@@ -639,10 +670,10 @@ class MicroDevice(threading.Thread):
 
                             elif not calibration:
                                 #5 Save image
-                                self.save_image(current_image, 'brightfield_worm', worm_count)    #TODO: better names?
-                                self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count)
-                                self.save_image(cyan_image, 'cyan_worm', worm_count)
-                                self.save_image(tritc_image, 'tritc_worm', worm_count)
+                                self.save_image(current_image, 'brightfield_worm', worm_count, _type = 'bf')    #TODO: better names?
+                                self.save_image(worm_mask.astype('uint8')*255, 'worm_mask', worm_count, _type = 'mask')
+                                self.save_image(cyan_image, 'cyan_worm', worm_count, _type = 'cyan')
+                                self.save_image(tritc_image, 'tritc_worm', worm_count, _type = 'tritc')
                                 print('Images saved')
 
                                 sort_param, direction = self.analyze(cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False)
@@ -711,7 +742,7 @@ class MicroDevice(threading.Thread):
             self.device_stop_run()
             print('finally')
             #Close csv file?
-
+    """
     def run(self):
 
         self.setup_csv(self.file_location, self.info)
@@ -737,6 +768,7 @@ class MicroDevice(threading.Thread):
         self.sort(calibration = False)
 
         self.summary_csv.close()
+    """
 
     def manual_set_up(self):
         self.hist_values = list(input('Histogram values: '))
