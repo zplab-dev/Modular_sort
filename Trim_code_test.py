@@ -38,7 +38,7 @@ LOST_CUTOFF = 1.5
 DOUBLE_THRESH = 1.3
 
 CYAN_EXPOSURE_TIME = 10  #~20 for lin-4, 50 for mir-71?
-GREEN_YELLOW_EXPOSURE_TIME = 50	#for mcherry
+GREEN_YELLOW_EXPOSURE_TIME = 50	#for autofluorescence
 
 BRIGHT_FIELD_EXPOSURE_TIME = 2
 
@@ -510,7 +510,7 @@ class MicroDevice(threading.Thread):
         else:
             pass
 
-    def check_metrics(self, current_image, worm_count, size1, size2, cyan_subtracted, worm_mask):
+    def check_metrics(self, current_image, worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image):
         """Checks all metrics that would cause a worm to be rejected in the sort,
         i.e. size, death fluorescence, aspect ratio (if sorting by length).
         How to include 2x size check to make sure worm didn't change too much
@@ -535,7 +535,8 @@ class MicroDevice(threading.Thread):
         elif self.check_dead(cyan_subtracted, worm_mask) == True:
             print('Worm ' + str(worm_count) + ' determined dead')
             self.save_image(current_image, 'dead_worm', worm_count, _type = 'dead')
-            self.save_image(cyan_subtracted, 'dead_worm_cyan', worm_count, _type = 'dead')
+            #self.save_image(cyan_subtracted, 'dead_worm_cyan', worm_count, _type = 'dead')
+            self.save_image(cyan_image, 'dead_worm_cyan', worm_count, _type = 'dead')
             return 'dead'
 
         #Aspect ratio
@@ -615,6 +616,7 @@ class MicroDevice(threading.Thread):
                     print('Worm has been detected')
                     time_seen = time.time()
                     time_between_worms = time_seen - time_start
+                    print('Time since start: ' + str(time_between_worms))
                     detected_image = current_image
                     worm_count += 1
                     if message_sent == True:
@@ -690,7 +692,7 @@ class MicroDevice(threading.Thread):
 
                             print('Size of worm after analysis: ' + str(size2))
 
-                            note = self.check_metrics(current_image, worm_count, size1, size2, cyan_subtracted, worm_mask)
+                            note = self.check_metrics(current_image, worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image)
                             
 
                             if note != 'sort':
@@ -861,7 +863,7 @@ class Autofluorescence(MicroDevice):
     def setup_csv(self, file_location, info):
         self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
         self.summary_csv = open(str(self.summary_csv_location), 'w')
-        header = ['worm_number', 'size', 'fluorescence', 'time', 'direction', 'note']
+        header = ['worm_number', 'size', 'autofluorescence', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
 
     def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
@@ -886,7 +888,7 @@ class Autofluorescence(MicroDevice):
 
         return worm_fluor, direction
 
-    def generate_data(worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         worm_data = [worm_count, worm_size, sort_param, time_between_worms, direction, note]
         return worm_data
 
