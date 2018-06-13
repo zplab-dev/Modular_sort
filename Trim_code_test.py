@@ -93,6 +93,7 @@ class MicroDevice(threading.Thread):
         self.file_location = Path(exp_direct)
         self.file_location.mkdir(mode=0o777, parents=True, exist_ok=True)
         self.info = exp_direct.split('/')[-1]
+        self.setup_dirs()
 
         self.device_clear_tubes()
 
@@ -651,6 +652,9 @@ class MicroDevice(threading.Thread):
 
                             #rw.image = worm_mask <riswidget seems to just bug out, how to get mask to show up?
 
+                            #numpy.clip gives limits for the output of an operation, so this avoids negative values and "bounce" from taken an absolute value.
+                            #Having this standard across experiments is likely fairly important. For instance, 2018/4/26 autofluor sort was before this when absolute value was used.
+                            #This was updated 2018/4/30
                             cyan_subtracted = numpy.clip(cyan_image.astype('int32') - self.cyan_background.astype('int32'), 0, 100000)
                             tritc_subtracted = numpy.clip(tritc_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
 
