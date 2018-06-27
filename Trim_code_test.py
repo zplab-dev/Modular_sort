@@ -37,7 +37,7 @@ CLEARING_THRES = 3
 LOST_CUTOFF = 1.5
 DOUBLE_THRESH = 1.3
 
-CYAN_EXPOSURE_TIME = 10  #~20 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 7  #10 for lin-4, 50 for mir-71?
 GREEN_YELLOW_EXPOSURE_TIME = 50	#for autofluorescence
 
 BRIGHT_FIELD_EXPOSURE_TIME = 2
@@ -532,7 +532,7 @@ class MicroDevice(threading.Thread):
             return 'small'
 
         #Death fluorescence:    TODO: How often is this getting called and is it correct?
-        elif self.check_dead(cyan_subtracted, worm_mask) == True:
+        elif self.check_dead(cyan_subtracted, worm_mask):
             print('Worm ' + str(worm_count) + ' determined dead')
             self.save_image(current_image, 'dead_worm', worm_count, _type = 'dead')
             #self.save_image(cyan_subtracted, 'dead_worm_cyan', worm_count, _type = 'dead')
@@ -547,7 +547,7 @@ class MicroDevice(threading.Thread):
             return 'bent'
 
         #Size change (New worm appeared or old worm dissapeared)
-        elif self.check_size_change(size1, size2) == True:
+        elif self.check_size_change(size1, size2):
             print('Detected appreciable size change')
             print('****Feature was useful****')
             self.save_image(post_analysis_image, 'size_difference_analyze', worm_count, _type = 'big')
@@ -661,6 +661,7 @@ class MicroDevice(threading.Thread):
                             tritc_subtracted = numpy.clip(tritc_image.astype('int32') - self.green_yellow_background.astype('int32'), 0, 100000)
 
                             autofluorescence = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
+                            print('Autofluorescence = ' + str(autofluorescence))
 
                             print('Worm positioned')
 
@@ -790,12 +791,6 @@ class GFP(MicroDevice):
         self.summary_csv = open(str(self.summary_csv_location), 'w')
         header = ['worm_number', 'size', 'red_autofluor', 'fluorescence', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
-
-    def manual_set_up(self):
-        self.upper_threshold = int(input('Upper GFP threshold = '))
-        self.lower_threshold = int(input('Lower GFP threshold = '))
-        self.size_threshold = int(input('Max size threshold = '))
-        self.min_worm_size = int(input('Min size threshold = '))
 
     def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
         """Class-specific method to determine measurement being sorted.
