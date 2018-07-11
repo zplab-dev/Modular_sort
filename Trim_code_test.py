@@ -1057,4 +1057,70 @@ class Length(MicroDevice):
 
         self.summary_csv.close()
 
-#class Q35(MicroDevice):
+class Jian(MicroDevice):
+    """Code for Jian's selection assay, looking to isolate nonfluorescent worms form a population of mcherry/gfp worms.
+    Sorts nonfluorescent worms up and other worms straight.
+    """
+    
+    def setup_csv(self, file_location, info):
+        self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'mcherry_fluor', 'gfp_fluor', 'time', 'direction', 'note']
+        self.summary_csv.write(','.join(header) + '\n')
+
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
+        """Class-specific method to determine measurement being sorted.
+        Takes background image, bf image of worm, worm count, and returns measurement + sort direction
+        Saves fluorescent (GFP) image
+        """
+
+        #Relevant param is fluor GFP (cyan)
+        fluor_gfp = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
+        fluor_mcherry = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
+        
+        print('GFP value = ' + str(fluor_gfp))
+        print('mcherry value = ' + str(fluor_mcherry))
+        
+        #Not sure if these values will work for detecting nonfluorescent worms, will need to see what Jian's worms look like
+        #I don't think my spe-9 worms would register as fluorescent under these conditions
+        #TODO: May need to play with the exposure time/tresholds here.
+        
+        if fluor_gfp >= 6000:               
+            direction = 'straight'
+            
+        elif fluor_mcherry >= 6000:
+            direction = 'straight'
+            
+        else:
+            direction = 'up'
+
+        return fluor_gfp, direction
+
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
+        return worm_data
+    
+    def update_hist(self, sort_param):
+        pass
+
+    def go(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+        self.reset = False
+
+        worm_count = 0
+        self.set_background_areas(worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 6000   #hard coding sizes for now
+        self.min_worm_size = 500
+
+        self.sort(calibration = False)
+
+        self.summary_csv.close()
