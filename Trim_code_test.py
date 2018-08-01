@@ -649,6 +649,7 @@ class MicroDevice(threading.Thread):
                             
                             if size1 == 0: #Dumb way of fixing empty array problem, since size thresholds being checked later
                                 print('No worm')
+                                note = 'lost'
                                 worm_count -= 1
                                 break
 
@@ -1085,10 +1086,10 @@ class Jian(MicroDevice):
         #I don't think my spe-9 worms would register as fluorescent under these conditions
         #TODO: May need to play with the exposure time/tresholds here.
         
-        if fluor_gfp >= 6000:               
+        if fluor_gfp >= 300:               
             direction = 'straight'
             
-        elif fluor_mcherry >= 6000:
+        elif fluor_mcherry >= 150:
             direction = 'straight'
             
         else:
@@ -1116,7 +1117,6 @@ class Jian(MicroDevice):
         self.set_background_areas(worm_count)
         print('setting backgrounds')
         time.sleep(1)
-        #input for build hist?
 
         self.size_threshold = 6000   #hard coding sizes for now
         self.min_worm_size = 500
