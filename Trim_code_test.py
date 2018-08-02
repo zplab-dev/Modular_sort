@@ -20,6 +20,10 @@ import threading
 import csv
 import requests
 from ris_widget import ris_widget
+from skimage.filters import sobel
+from skimage.morphology import watershed
+from skimage.measure import label
+
 
 IMAGE_SIZE = (1280, 1080)
 BOILER_AREA = (slice(530,1100), slice(530,590))
@@ -37,7 +41,7 @@ CLEARING_THRES = 3
 LOST_CUTOFF = 1.5
 DOUBLE_THRESH = 1.3
 
-CYAN_EXPOSURE_TIME = 7  #10 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 10  #10 for lin-4, 50 for mir-71?
 GREEN_YELLOW_EXPOSURE_TIME = 50	#for autofluorescence
 
 BRIGHT_FIELD_EXPOSURE_TIME = 2
@@ -494,7 +498,7 @@ class MicroDevice(threading.Thread):
         self.upper_threshold = numpy.percentile(self.hist_values, 90)
         self.lower_threshold = numpy.percentile(self.hist_values, 10)
 
-        print('Fluorescence list = \n ' , str(self.hist_values))
+        print('Value list = \n ' , str(self.hist_values))
         print('Avg =' + str(numpy.mean(self.hist_values)))
         print('90th percentile =' + str(self.upper_threshold))
         print('10th percentile =' + str(self.lower_threshold))
@@ -1124,3 +1128,86 @@ class Jian(MicroDevice):
         self.sort(calibration = False)
 
         self.summary_csv.close()
+
+class Isaac(MicroDevice):
+
+    def setup_csv(self, file_location, info):
+        #TODO: add something to header line to let later reader know what kind of sort it was?
+        #What about including a note line for max size and min size? exposure time? etc?
+        self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'red_autofluor', 'aggregate_count', 'time', 'direction', 'note']
+        self.summary_csv.write(','.join(header) + '\n')
+
+    def watershed_aggs(self, image):
+        #Image is a GFP image as an ndarray
+        high_thresh = numpy.percentile(image,99.99) #Alternatively, can use the 97th percentile mask pixel if the mask is available
+        low_thresh = numpy.percentile(image,99)
+        markers = numpy.zeros_like(image)
+        markers[image > high_thresh] = 2
+        markers[image < low_thresh] = 1
+        watershed_im = watershed(sobel(image),markers)
+        aggregates = numpy.max(label(watershed_im))
+        return aggregates
+
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
+        """Class-specific method to determine measurement being sorted.
+        Takes background image, bf image of worm, worm count, and returns measurement + sort direction
+        Saves fluorescent (GFP) image
+        """
+
+        #Relevant param is fluor GFP (cyan)
+        aggregate_count = self.watershed_aggs(cyan_subtracted)
+        print('Number of aggregates = ' + str(aggregate_count))
+
+        if calibration:
+            direction = 'straight'
+            return aggregate_count, direction
+
+        elif not calibration:
+
+            if aggregate_count >= self.upper_threshold:
+                direction = 'up'
+            elif aggregate_count <= self.lower_threshold:
+                direction = 'down'
+            else:
+                direction = 'straight'
+
+            return aggregate_count, direction
+
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+        """Function for returning the right csv lin config for a given class.
+        Here, returns the number, size, fluorescence, time between worms, directions, and note (hist or sort)
+        sort_param = GFP fluorescence
+        """
+
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
+        return worm_data
+
+    def go(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+        self.reset = False
+
+        worm_count = 0
+        self.set_background_areas(worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 7500   #hard coding sizes for now
+        self.min_worm_size = 2500
+
+        self.build_hist()
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.sort(calibration = False)
+
+        self.summary_csv.close()
+
+
