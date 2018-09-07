@@ -19,10 +19,14 @@ import freeimage
 import threading
 import csv
 import requests
+import collections
+
 from ris_widget import ris_widget
 from skimage.filters import sobel
 from skimage.morphology import watershed
 from skimage.measure import label
+import zplib.image.write_movie
+import zplib.image.colorize
 
 
 IMAGE_SIZE = (1280, 1080)
@@ -41,7 +45,7 @@ CLEARING_THRES = 3
 LOST_CUTOFF = 1.5
 DOUBLE_THRESH = 1.3
 
-CYAN_EXPOSURE_TIME = 10  #10 for lin-4, 50 for mir-71?
+CYAN_EXPOSURE_TIME = 7  #10 for lin-4, 50 for mir-71?
 GREEN_YELLOW_EXPOSURE_TIME = 50	#for autofluorescence
 
 BRIGHT_FIELD_EXPOSURE_TIME = 2
@@ -314,7 +318,6 @@ class MicroDevice(threading.Thread):
         Currently the clean_dust_and_holes does not return the clean image and actually modifies the passed image.
         """
         mask = self.worm_mask(subtracted_image)
-        #self.save_image(floored_image.astype('uint16'), 'worm_mask', True)
         a = (1*numpy.sum(mask.astype('bool')))
         return a
 
@@ -425,13 +428,19 @@ class MicroDevice(threading.Thread):
                     UP_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_SUCK,
                     DOWN_CHANNEL_PRESSURE)
         time.sleep(0.5)
-
+        
+    
     def send_text(self, message):
+        """
+        TODO:replace this with discord web hook
+        
         requests.post('https://textbelt.com/text',
                         {'phone': '6019538192',
                          'message': str(message),
                          'key':'08a7e7d3335d92542dfec857461cfb14af5e0805HQINVtRpVqvDjo9O2wa2I6tTo'})
-
+        """
+        pass
+    
     def main(self):    #Not entirely sure what this is
         self.device = iotool.IOTool("/dev/ttyMicrofluidics")
         return
@@ -591,6 +600,8 @@ class MicroDevice(threading.Thread):
         time_start = time.time()
         time_seen = time_start #Initial setting for time_seen before worm found
         message_sent = False
+        
+        self.film_reel = collections.deque(maxlen = 200)
 
         #rw = ris_widget.RisWidget() <was trying to play around with mask visualization
 
@@ -620,7 +631,7 @@ class MicroDevice(threading.Thread):
                     print('Worm has been detected')
                     time_seen = time.time()
                     time_between_worms = time_seen - time_start
-                    print('Time since start: ' + str(time_between_worms))
+                    print('Time since start: ' + str(numpy.asarray(time_between_worms) / 60) + 'min')
                     detected_image = current_image
                     worm_count += 1
                     if message_sent == True:
@@ -647,6 +658,7 @@ class MicroDevice(threading.Thread):
                             bf_image, cyan_image, tritc_image = self.acquire_worm_images()
                             bf_subtracted = (abs(bf_image.astype('int32') - self.background.astype('int32')))
                             worm_mask = self.worm_mask(bf_subtracted)
+                            self.scale_image(worm_mask, 'mask')
                             size1 = self.size_of_worm(bf_subtracted)
                             #Used as worm size but also for comparison later
                             print('Size of worm before sorting: ' + str(size1))
@@ -736,6 +748,8 @@ class MicroDevice(threading.Thread):
                         print('Worm ' + str(worm_count) + ' data saved')
                     
                     print('_______________________________________________________________________________')
+                    
+                    self.make_movie(worm_count, self.film_reel)
 
                     if worm_count % 100 == 0 and worm_count != 0:   #Resets background every 100 worms
                         self.reset_background(worm_count)
@@ -786,6 +800,12 @@ class MicroDevice(threading.Thread):
         self.hist_values = list(input('Histogram values: '))
         self.upper_threshold = numpy.percentile(self.hist_values, 90)
         self.lower_threshold = numpy.percentile(self.hist_values, 10)
+        
+    def scale_image(self, image, type_of_image):
+        pass
+    
+    def make_movie(self, worm_count, movie_list):
+        pass
 
 class GFP(MicroDevice):
 
@@ -1209,5 +1229,93 @@ class Isaac(MicroDevice):
         self.sort(calibration = False)
 
         self.summary_csv.close()
+        
+class Movie(MicroDevice):
+    
+    def setup_csv(self, file_location, info):
+        self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'autofluorescence', 'GFP_fluorescence', 'time', 'direction', 'note']
+        self.summary_csv.write(','.join(header) + '\n')
+
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
+        """
+        """
+        
+        worm_fluor = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
+        
+        if worm_count <= 5:
+            direction = 'straight'
+            
+        else:
+            counter = worm_count % 3
+            if counter == 0:
+                direction = 'straight'
+            elif counter == 1:
+                direction = 'up'
+            elif counter == 2:
+                direction = 'down'
+
+        return worm_fluor, direction
+
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
+        return worm_data
+    
+    def update_hist(self, sort_param):
+        pass
+    
+    def capture_image(self, type_of_image):
+        #overwriting the normal capture_image function for the movie maker class such that it scales and saves images.
+        
+        type_of_image()
+        self.scope.camera.send_software_trigger()
+        image = self.scope.camera.next_image()
+        
+        scaled_image = self.scale_image(image, type_of_image)
+        self.film_reel.append(scaled_image.astype('uint8'))
+
+        return image
+    
+    def scale_image(self, image, type_of_image):
+        if type_of_image == self.bright:
+            scaled_image = zplib.image.colorize.scale(image, min=0, max=53000)
+        elif type_of_image == self.cyan:
+            scaled_image = zplib.image.colorize.scale(image, min=0, max=20000)
+        elif type_of_image == self.green_yellow:
+            scaled_image = zplib.image.colorize.scale(image, min=0, max=2000)
+        elif type_of_image == 'mask':
+            scaled_image = zplib.image.colorize.scale(image, min=0, max=1)
+            self.film_reel.append(scaled_image.astype('uint8'))
+                                  
+        return scaled_image
+        
+    
+    def make_movie(self, worm_count, movie_list):
+        zplib.image.write_movie.write_movie(movie_list, 'worm' + str(worm_count) + '.mp4')
+    
+    def go(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+        self.reset = False
+        
+        self.film_reel = collections.deque(maxlen=200)
+
+        worm_count = 0
+        self.set_background_areas(worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+
+        self.size_threshold = 8000   #hard coding sizes for now
+        self.min_worm_size = 3000
+
+        self.sort(calibration = False)
+
+        self.summary_csv.close()
+    
 
 
