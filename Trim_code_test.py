@@ -105,32 +105,6 @@ class MicroDevice(threading.Thread):
 
         self.device_clear_tubes()
 
-        #Create event flag, initially set to false
-        self.running = threading.Event()
-        super().__init__(daemon=True)
-
-    def pause(self):
-        """Sets 'running' flag to false
-        """
-        self.running.clear()
-
-    def resume(self):
-        """Sets 'running' flag to true
-        """
-        self.running.set()
-
-    def quit(self):
-        print('Quiting')
-        self.quitting = True
-
-    def clear(self):
-        print('Cleared')
-        self.cleared = True
-
-    def reset(self):
-        print('Reset')
-        self.reset = True
-
     def write_csv_line(self,csv,data):
         csv.write(','.join(map(str, data)) + '\n')
 
@@ -210,7 +184,7 @@ class MicroDevice(threading.Thread):
                             PUSH_CHANNEL_PRESSURE)
 
     def save_image(self, image, name, worm_count, _type=None):
-        """Saves image to directory provided when script is first loaded. 
+        """Saves image to directory provided when script is first loaded.
            If type is specified, saves to subdirectory to more easily search through images
            types: bf (brightfield), cyan (GFP), tritc (autofluor), dead, small,
            big, and bent.
@@ -379,33 +353,30 @@ class MicroDevice(threading.Thread):
         if direction == 'up':
             self.device.execute(SEWER_CHANNEL_PRESSURE, UP_CHANNEL_SUCK ,PUSH_CHANNEL_STATIC)
             if self.check_cleared(background, worm_count):
-                self.reset = False
                 time.sleep(SORTING_INTERVAL)
                 self.device.execute(UP_CHANNEL_PRESSURE)
                 self.up_count += 1
         elif direction == 'down':
             self.device.execute(SEWER_CHANNEL_PRESSURE, DOWN_CHANNEL_SUCK, PUSH_CHANNEL_STATIC)
             if self.check_cleared(background, worm_count):
-                self.reset = False
                 time.sleep(SORTING_INTERVAL)
                 self.device.execute(DOWN_CHANNEL_PRESSURE)
                 self.down_count += 1
         elif direction == 'straight':
             self.device.execute(SEWER_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_SUCK, PUSH_CHANNEL_STATIC)
             if self.check_cleared(background, worm_count):
-                self.reset = False
                 time.sleep(SORTING_INTERVAL)
                 self.device.execute(STRAIGHT_CHANNEL_PRESSURE)
                 #TODO: I don't actually want to iterate this unless it's a "good" worm, currently going up for all worms sorted straight
                 self.straight_count += 1
-        else: 
+        else:
             raise Exception('Direction "' + str(direction) + '" not recognized')
 
     def check_cleared(self, background, worm_count):        #TODO: Fix force reset option, because flag never triggers
                                                             #how to make this better? Reject worm after too long?
         time_clear_start = time.time()
         message_sent = False
-        while not self.reset:
+        while True:
             current_image = self.capture_image(self.bright)
             sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
             if numpy.sum(sorted_worm_difference) < CLEARING_THRES * self.clear_background:
@@ -428,19 +399,19 @@ class MicroDevice(threading.Thread):
                     UP_CHANNEL_PRESSURE, STRAIGHT_CHANNEL_SUCK,
                     DOWN_CHANNEL_PRESSURE)
         time.sleep(0.5)
-        
-    
+
+
     def send_text(self, message):
         """
         TODO:replace this with discord web hook
-        
+
         requests.post('https://textbelt.com/text',
                         {'phone': '6019538192',
                          'message': str(message),
                          'key':'08a7e7d3335d92542dfec857461cfb14af5e0805HQINVtRpVqvDjo9O2wa2I6tTo'})
         """
         pass
-    
+
     def main(self):    #Not entirely sure what this is
         self.device = iotool.IOTool("/dev/ttyMicrofluidics")
         return
@@ -533,7 +504,7 @@ class MicroDevice(threading.Thread):
         reason why worm was rejected.
         """
         length, width = self.find_dimensions(worm_mask)
-        
+
         #Worm size when imaged:
         if size1 > self.size_threshold:     #TODO: think on how to better decide size thresholds
             print('Detected double worm')
@@ -600,7 +571,7 @@ class MicroDevice(threading.Thread):
         time_start = time.time()
         time_seen = time_start #Initial setting for time_seen before worm found
         message_sent = False
-        
+
         self.film_reel = collections.deque(maxlen = 200)
 
         #rw = ris_widget.RisWidget() <was trying to play around with mask visualization
@@ -662,7 +633,7 @@ class MicroDevice(threading.Thread):
                             size1 = self.size_of_worm(bf_subtracted)
                             #Used as worm size but also for comparison later
                             print('Size of worm before sorting: ' + str(size1))
-                            
+
                             if size1 == 0: #Dumb way of fixing empty array problem, since size thresholds being checked later
                                 print('No worm')
                                 note = 'lost'
@@ -711,7 +682,7 @@ class MicroDevice(threading.Thread):
                             print('Size of worm after analysis: ' + str(size2))
 
                             note = self.check_metrics(current_image, worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image)
-                            
+
 
                             if note != 'sort':
                                 direction = 'straight'
@@ -724,9 +695,9 @@ class MicroDevice(threading.Thread):
                             elif not calibration and note == 'sort':
                                 #if worm is deemed good and sort is running, note is sort
                                 pass
-                            
+
                             print('Note = ' + str(note))
-                        
+
                             #7 Sort worms
                             self.device_sort(direction, self.background, worm_count)
                             print('Worm ' + str(worm_count) + ' sorted ' + direction)
@@ -734,21 +705,21 @@ class MicroDevice(threading.Thread):
                             if not calibration and note == 'sort':
                                 print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
                                 self.update_hist(sort_param)
-                            
+
                             break   #Neccessary to break while loop
 
                         else:
                             detected_image = current_image  #What is this doing? Pass back to front?
-                    
+
                     if note != 'lost':
                         #No need to save data for lost worms, and I don't think we were losing many anyway
                         worm_data = self.generate_data(worm_count, size1, autofluorescence, sort_param, time_between_worms, direction, note)
                         #TODO: Fix data generation across all classes (if sort_param == list etc)
                         self.write_csv_line(self.summary_csv, worm_data)
                         print('Worm ' + str(worm_count) + ' data saved')
-                    
+
                     print('_______________________________________________________________________________')
-                    
+
                     self.make_movie(worm_count, self.film_reel)
 
                     if worm_count % 100 == 0 and worm_count != 0:   #Resets background every 100 worms
@@ -800,10 +771,10 @@ class MicroDevice(threading.Thread):
         self.hist_values = list(input('Histogram values: '))
         self.upper_threshold = numpy.percentile(self.hist_values, 90)
         self.lower_threshold = numpy.percentile(self.hist_values, 10)
-        
+
     def scale_image(self, image, type_of_image):
         pass
-    
+
     def make_movie(self, worm_count, movie_list):
         pass
 
@@ -858,7 +829,6 @@ class GFP(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         self.boiler = boiler()
-        self.reset = False
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -919,7 +889,6 @@ class Autofluorescence(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         self.boiler = boiler()
-        self.reset = False
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -991,7 +960,6 @@ class Background(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         self.boiler = boiler()
-        self.reset = False
 
         #0 Setting Background
         worm_count = 0
@@ -1062,8 +1030,6 @@ class Length(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         self.boiler = boiler()
-        self.reset = False
-
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -1086,7 +1052,7 @@ class Jian(MicroDevice):
     """Code for Jian's selection assay, looking to isolate nonfluorescent worms form a population of mcherry/gfp worms.
     Sorts nonfluorescent worms up and other worms straight.
     """
-    
+
     def setup_csv(self, file_location, info):
         self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
         self.summary_csv = open(str(self.summary_csv_location), 'w')
@@ -1102,20 +1068,20 @@ class Jian(MicroDevice):
         #Relevant param is fluor GFP (cyan)
         fluor_gfp = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
         fluor_mcherry = self.find_95th_fluor_amount(tritc_subtracted, worm_mask)
-        
+
         print('GFP value = ' + str(fluor_gfp))
         print('mcherry value = ' + str(fluor_mcherry))
-        
+
         #Not sure if these values will work for detecting nonfluorescent worms, will need to see what Jian's worms look like
         #I don't think my spe-9 worms would register as fluorescent under these conditions
         #TODO: May need to play with the exposure time/tresholds here.
-        
-        if fluor_gfp >= 300:               
+
+        if fluor_gfp >= 300:
             direction = 'straight'
-            
+
         elif fluor_mcherry >= 150:
             direction = 'straight'
-            
+
         else:
             direction = 'up'
 
@@ -1124,7 +1090,7 @@ class Jian(MicroDevice):
     def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
-    
+
     def update_hist(self, sort_param):
         pass
 
@@ -1135,7 +1101,6 @@ class Jian(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         self.boiler = boiler()
-        self.reset = False
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -1211,7 +1176,6 @@ class Isaac(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         self.boiler = boiler()
-        self.reset = False
 
         worm_count = 0
         self.set_background_areas(worm_count)
@@ -1229,9 +1193,9 @@ class Isaac(MicroDevice):
         self.sort(calibration = False)
 
         self.summary_csv.close()
-        
+
 class Movie(MicroDevice):
-    
+
     def setup_csv(self, file_location, info):
         self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
         self.summary_csv = open(str(self.summary_csv_location), 'w')
@@ -1241,12 +1205,12 @@ class Movie(MicroDevice):
     def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
         """
         """
-        
+
         worm_fluor = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
-        
+
         if worm_count <= 5:
             direction = 'straight'
-            
+
         else:
             counter = worm_count % 3
             if counter == 0:
@@ -1261,22 +1225,22 @@ class Movie(MicroDevice):
     def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
-    
+
     def update_hist(self, sort_param):
         pass
-    
+
     def capture_image(self, type_of_image):
         #overwriting the normal capture_image function for the movie maker class such that it scales and saves images.
-        
+
         type_of_image()
         self.scope.camera.send_software_trigger()
         image = self.scope.camera.next_image()
-        
+
         scaled_image = self.scale_image(image, type_of_image)
         self.film_reel.append(scaled_image.astype('uint8'))
 
         return image
-    
+
     def scale_image(self, image, type_of_image):
         if type_of_image == self.bright:
             scaled_image = zplib.image.colorize.scale(image, min=0, max=53000)
@@ -1287,13 +1251,13 @@ class Movie(MicroDevice):
         elif type_of_image == 'mask':
             scaled_image = zplib.image.colorize.scale(image, min=0, max=1)
             self.film_reel.append(scaled_image.astype('uint8'))
-                                  
+
         return scaled_image
-        
-    
+
+
     def make_movie(self, worm_count, movie_list):
         zplib.image.write_movie.write_movie(movie_list, 'worm' + str(worm_count) + '.mp4')
-    
+
     def go(self):
 
         self.setup_csv(self.file_location, self.info)
@@ -1301,8 +1265,7 @@ class Movie(MicroDevice):
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
         self.boiler = boiler()
-        self.reset = False
-        
+
         self.film_reel = collections.deque(maxlen=200)
 
         worm_count = 0
@@ -1316,6 +1279,3 @@ class Movie(MicroDevice):
         self.sort(calibration = False)
 
         self.summary_csv.close()
-    
-
-
