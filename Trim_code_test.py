@@ -443,7 +443,7 @@ class MicroDevice:
         fluor_median = numpy.median(fluor_worm)
         return fluor_median
 
-    def build_hist(self, initial_hist_size = 100):
+    def build_hist(self, size = 100):
         """Function that builds initial histogram from which percentiles are taken to determine upper and lower thresholds
         for sorting. Also returns sorting parameter (fluorescence, length, etc) as list which can be updated.
         """
@@ -453,7 +453,7 @@ class MicroDevice:
         #together in the summary file? Then I wouldn't need a separate list for hist values, would just pull from all
         #fluors taken
 
-        self.sort(calibration = True, initial_hist_size)
+        self.sort(calibration = True, initial_hist_size = size)
 
         self.upper_threshold = numpy.percentile(self.hist_values, 90)
         self.lower_threshold = numpy.percentile(self.hist_values, 10)
@@ -522,7 +522,7 @@ class MicroDevice:
             return 'sort'
 
 
-    def sort(self, calibration, initial_hist_size=100):      #TODO: break this into general sorting function, put other relevant details in run func.
+    def sort(self, calibration, initial_hist_size=100):
         """
         Function that starts the device running with a given purpose
         #0 set background
@@ -733,10 +733,10 @@ class MicroDevice:
         time.sleep(1)
         #input for build hist?
 
-        self.size_threshold = 7500   #hard coding sizes for now
-        self.min_worm_size = 3000
+        self.size_threshold = 7600   #hard coding sizes for now
+        self.min_worm_size = 3400
 
-        self.build_hist(initial_hist_size=100)
+        self.build_hist(size=100)
 
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
 
@@ -799,32 +799,6 @@ class GFP(MicroDevice):
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
 
-    def go(self):
-        #TODO: Confirm that generalized run function fixes problems between classes and delete go() functions.
-
-        self.setup_csv(self.file_location, self.info)
-
-        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-
-        self.boiler = boiler()
-
-        worm_count = 0
-        self.set_background_areas(worm_count)
-        print('setting backgrounds')
-        time.sleep(1)
-        #input for build hist?
-
-        self.size_threshold = 7500   #hard coding sizes for now
-        self.min_worm_size = 3000
-
-        self.build_hist()
-
-        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-
-        self.sort(calibration = False)
-
-        self.summary_csv.close()
-
 
 class Autofluorescence(MicroDevice):
 
@@ -860,30 +834,6 @@ class Autofluorescence(MicroDevice):
         worm_data = [worm_count, worm_size, sort_param, time_between_worms, direction, note]
         return worm_data
 
-    def go(self):
-
-        self.setup_csv(self.file_location, self.info)
-
-        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-
-        self.boiler = boiler()
-
-        worm_count = 0
-        self.set_background_areas(worm_count)
-        print('setting backgrounds')
-        time.sleep(1)
-        #input for build hist?
-
-        self.size_threshold = 8000   #hard coding sizes for now
-        self.min_worm_size = 3000
-
-        self.build_hist()
-
-        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-
-        self.sort(calibration = False)
-
-        self.summary_csv.close()
 
 class Background(MicroDevice):
     """For gathering data on nonfluorescent worms, background autofluorescence of the system
@@ -925,34 +875,10 @@ class Background(MicroDevice):
         """
         worm_data = [worm_count, worm_size] + sort_param + [time_between_worms, direction, note]
         return worm_data
-
-    def nosort(self):
-        """Sorts worms straight
-        """
-
-        CYAN_EXPOSURE_TIME = 10 #Calibrating for Q35 imaging
-
-
-        self.setup_csv(self.file_location, self.info)
-
-        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-
-        self.boiler = boiler()
-
-        #0 Setting Background
-        worm_count = 0
-        self.set_background_areas(worm_count)
-        print('setting backgrounds')
-        time.sleep(1)
-        #input for build hist?
-
-        self.size_threshold = 7500   #hard coding sizes for now
-        self.min_worm_size = 1500
-
-        self.sort(calibration = True)
-
-        self.summary_csv.close()
-
+    
+    def build_hist(self, size):
+        pass
+    
 
 class Length(MicroDevice):
 
@@ -1000,31 +926,6 @@ class Length(MicroDevice):
         #Just write as if type(sort_param) =! list
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
-
-    def go(self):
-
-        self.setup_csv(self.file_location, self.info)
-
-        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-
-        self.boiler = boiler()
-
-        worm_count = 0
-        self.set_background_areas(worm_count)
-        print('setting backgrounds')
-        time.sleep(1)
-        #input for build hist?
-
-        self.size_threshold = 8000   #hard coding sizes for now
-        self.min_worm_size = 3000
-
-        self.build_hist()
-
-        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
-
-        self.sort(calibration = False)
-
-        self.summary_csv.close()
 
 class Isaac(MicroDevice):
 
