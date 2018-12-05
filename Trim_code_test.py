@@ -474,7 +474,7 @@ class MicroDevice:
         else:
             pass
 
-    def check_metrics(self, current_image, worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image):
+    def check_metrics(self, current_image, worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image, af):
         """Checks all metrics that would cause a worm to be rejected in the sort,
         i.e. size, death fluorescence, aspect ratio (if sorting by length).
         How to include 2x size check to make sure worm didn't change too much
@@ -516,6 +516,12 @@ class MicroDevice:
             self.save_image(post_analysis_image, 'size_difference_analyze', worm_count, _type = 'big')
             #Filing these with worms above size threshold for now because i'm not sure how often this gets used
             return 'new_worm'
+        
+        #Autofluorescence (should be within an expected range for adult worms)
+        elif af <= 200:
+            #Testing this out to filter young worms who won't be caught by size filter
+            print('Autofluorescence suspiciously low')
+            return 'low_af'
 
         #Passed all?
         else:
@@ -658,7 +664,7 @@ class MicroDevice:
 
                             print('Size of worm after analysis: ' + str(size2))
 
-                            note = self.check_metrics(current_image, self.worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image)
+                            note = self.check_metrics(current_image, self.worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image, autofluorescence)
 
                             if note != 'sort':
                                 direction = 'straight'
@@ -734,7 +740,7 @@ class MicroDevice:
         #input for build hist?
 
         self.size_threshold = 7600   #hard coding sizes for now
-        self.min_worm_size = 3400
+        self.min_worm_size = 2600
 
         self.build_hist(size=100)
 
