@@ -518,7 +518,7 @@ class MicroDevice:
             return 'new_worm'
         
         #Autofluorescence (should be within an expected range for adult worms)
-        elif af <= 200:
+        elif af <= 100:
             #Testing this out to filter young worms who won't be caught by size filter
             print('Autofluorescence suspiciously low')
             return 'low_af'
@@ -526,6 +526,20 @@ class MicroDevice:
         #Passed all?
         else:
             return 'sort'
+    
+    def check_note(self, calibration, note, direction):
+        
+        if note != 'sort':
+            direction = 'straight'
+            #sort straight if worm is bad for some reason
+        elif calibration and note == 'sort':
+            direction = 'straight'
+            note = 'calibration' #note worms used in initial histogram as calibration worms
+        elif not calibration and note == 'sort':
+            #if worm is deemed good and sort is running, note is sort
+            pass
+        
+        return note, direction
 
 
     def sort(self, calibration, initial_hist_size=100):
@@ -666,19 +680,14 @@ class MicroDevice:
 
                             note = self.check_metrics(current_image, self.worm_count, size1, size2, cyan_subtracted, worm_mask, cyan_image, autofluorescence)
 
-                            if note != 'sort':
-                                direction = 'straight'
-                                #sort straight if worm is bad for some reason
-                            elif calibration and note == 'sort':
-                                direction = 'straight'
-                                note = 'calibration' #note worms used in initial histogram as calibration worms
-                                self.hist_values.append(sort_param)  #building initial histogram
-                                print('Good calibration worms: ' + str(len(self.hist_values)))
-                            elif not calibration and note == 'sort':
-                                #if worm is deemed good and sort is running, note is sort
-                                pass
+                            note, direction = self.check_note(calibration, note, direction)
 
                             print('Note = ' + str(note))
+                            
+                            if note == 'calibration':
+                            
+                                self.hist_values.append(sort_param)  #building initial histogram
+                                print('Good calibration worms: ' + str(len(self.hist_values)))
 
                             #7 Sort worms
                             self.device_sort(direction, self.background, self.worm_count)
@@ -839,7 +848,93 @@ class Autofluorescence(MicroDevice):
     def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         worm_data = [worm_count, worm_size, sort_param, time_between_worms, direction, note]
         return worm_data
+    
+class Filter(MicroDevice):
+    """For generating a population of worms free of small, low af, or otherwise undesirable worms, and also simulating a sort in the process.
+    Good worms go straight, other worms go up.
+    """
+    
+    def setup_csv(self, file_location, info):
+        self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'red_autofluor', 'fluorescence', 'time', 'direction', 'note']
+        self.summary_csv.write(','.join(header) + '\n')
+        
+    def build_hist(self, size):
+        pass
+    
+    def update_hist(self, sort_param):
+        pass
+    
+        
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
+        """Sends worm straight, and computes GFP value with 95th percentile brightest pixel, may be useful just for interest of a population.
+        """
 
+        worm_fluor = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
+        direction = 'straight'
+
+        return worm_fluor, direction
+        
+    def check_note(self, calibration, note, direction):
+        """New version of this function specific to the Filter class, sends bad worms up and other worms straight.
+        """
+        
+        if note != 'sort':
+            direction = 'up'
+        elif note == 'sort':
+            #if worm is deemed good and sort is running, note is sort
+            pass
+        
+        return note, direction
+    
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+        """Function for returning the right csv lin config for a given class.
+        Here, returns the number, size, fluorescence, time between worms, directions, and note (hist or sort)
+        sort_param = GFP fluorescence
+        """
+
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
+        return worm_data
+    
+class Simulate(MicroDevice):
+    """Sends worms up, down, and straight repeatedly. Useful for simulating a sort in each direction. Unfortunately, undesirable worms (short, low af, etc) will still be sent straight, so those will need to be manually separated at the end before lifespan assay is carried out).
+    """
+    def setup_csv(self, file_location, info):
+        self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'red_autofluor', 'fluorescence', 'time', 'direction', 'note']
+        self.summary_csv.write(','.join(header) + '\n')
+        
+    def build_hist(self, size):
+        pass
+    
+    def update_hist(self, size):
+        pass
+    
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
+        
+        worm_fluor = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
+        
+        counter = worm_count % 3
+        if counter == 0:
+            direction = 'straight'
+        elif counter == 1:
+            direction = 'up'
+        elif counter == 2:
+            direction = 'down'
+            
+        return worm_fluor, direction
+    
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+        """Function for returning the right csv lin config for a given class.
+        Here, returns the number, size, fluorescence, time between worms, directions, and note (hist or sort)
+        sort_param = GFP fluorescence
+        """
+
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
+        return worm_data
+        
 
 class Background(MicroDevice):
     """For gathering data on nonfluorescent worms, background autofluorescence of the system
