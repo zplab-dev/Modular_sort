@@ -531,6 +531,7 @@ class MicroDevice:
         
         if note != 'sort':
             direction = 'straight'
+            self.bad_worm_count += 1
             #sort straight if worm is bad for some reason
         elif calibration and note == 'sort':
             direction = 'straight'
@@ -560,6 +561,7 @@ class MicroDevice:
         self.up_count = 0
         self.down_count = 0
         self.straight_count = 0
+        self.bad_worm_count = 0
         cycle_count = 0
 
         test_counter = 0
@@ -693,8 +695,9 @@ class MicroDevice:
                             self.device_sort(direction, self.background, self.worm_count)
                             print('Worm ' + str(self.worm_count) + ' sorted ' + direction)
 
-                            if not calibration and note == 'sort':
-                                print('Up: ' + str(self.up_count), ' Straight: ' + str(self.straight_count), ' Down: ' + str(self.down_count))
+                            if not calibration:
+                                
+                                print('Up: ' + str(self.up_count), ' Straight (sorted): ' + str(self.straight_count-self.bad_worm_count), ' Straight (bad): ' + str(self.bad_worm_count), ' Down: ' + str(self.down_count))
                                 self.update_hist(sort_param)
 
                             break   #Neccessary to break while loop
@@ -897,6 +900,34 @@ class Filter(MicroDevice):
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
     
+    def run(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+
+        self.worm_count = 0
+        self.time_start = time.time()
+
+        #0 Setting Background
+        self.set_background_areas(self.worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 7600   #hard coding sizes for now
+        self.min_worm_size = 2600
+
+        self.build_hist(size=100)
+
+        #self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.sort(calibration = False)
+
+        self.summary_csv.close()
+    
 class Simulate(MicroDevice):
     """Sends worms up, down, and straight repeatedly. Useful for simulating a sort in each direction. Unfortunately, undesirable worms (short, low af, etc) will still be sent straight, so those will need to be manually separated at the end before lifespan assay is carried out).
     """
@@ -935,6 +966,33 @@ class Simulate(MicroDevice):
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
         
+    def run(self):
+
+        self.setup_csv(self.file_location, self.info)
+
+        self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.boiler = boiler()
+
+        self.worm_count = 0
+        self.time_start = time.time()
+
+        #0 Setting Background
+        self.set_background_areas(self.worm_count)
+        print('setting backgrounds')
+        time.sleep(1)
+        #input for build hist?
+
+        self.size_threshold = 7600   #hard coding sizes for now
+        self.min_worm_size = 2600
+
+        self.build_hist(size=100)
+
+        #self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
+
+        self.sort(calibration = False)
+
+        self.summary_csv.close()
 
 class Background(MicroDevice):
     """For gathering data on nonfluorescent worms, background autofluorescence of the system
