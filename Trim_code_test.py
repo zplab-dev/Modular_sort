@@ -690,16 +690,17 @@ class MicroDevice:
                             
                                 self.hist_values.append(sort_param)  #building initial histogram
                                 print('Good calibration worms: ' + str(len(self.hist_values)))
+                                
+                            if note == 'sort':
+                                self.update_hist(sort_param)
 
                             #7 Sort worms
                             self.device_sort(direction, self.background, self.worm_count)
                             print('Worm ' + str(self.worm_count) + ' sorted ' + direction)
 
                             if not calibration:
-                                
                                 print('Up: ' + str(self.up_count), ' Straight (sorted): ' + str(self.straight_count-self.bad_worm_count), ' Straight (bad): ' + str(self.bad_worm_count), ' Down: ' + str(self.down_count))
-                                self.update_hist(sort_param)
-
+                            
                             break   #Neccessary to break while loop
 
                         else:
