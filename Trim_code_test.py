@@ -432,6 +432,13 @@ class MicroDevice:
         fluor_worm = subtracted_image[worm_mask]
         fluor_95th = numpy.percentile(fluor_worm, 95)
         return fluor_95th
+    
+    def fluor_over_99_mean(self, subtracted_image, worm_mask):
+        fluor_worm = subtracted_image[worm_mask]
+        fluor_99 = numpy.percentile(fluor_worm, 99)
+        pix_over_99 = [pixel for pixel in fluor_worm if pixel >= fluor_99]
+        over_99_mean = numpy.mean(pix_over_99)
+        return over_99_mean
 
     def find_mean_fluor_amount(self, subtracted_image, worm_mask):
         fluor_worm = subtracted_image[worm_mask]
@@ -774,14 +781,18 @@ class MicroDevice:
     def make_movie(self, worm_count, movie_list):
         pass
 
-class GFP(MicroDevice):
+class GFP_95(MicroDevice):
+    """
+    Sorts worms based on 95th percentile pixel intensity in the background-subtracted fluorescent image. Appropriate for lin-4p::GFP,
+    mir-240-786p::GFP, and red autofluorescence.
+    """
 
     def setup_csv(self, file_location, info):
         #TODO: add something to header line to let later reader know what kind of sort it was?
         #What about including a note line for max size and min size? exposure time? etc?
         self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
         self.summary_csv = open(str(self.summary_csv_location), 'w')
-        header = ['worm_number', 'size', 'red_autofluor', 'fluorescence', 'time', 'direction', 'note']
+        header = ['worm_number', 'size', 'red_autofluor', 'fluorescence_95', 'time', 'direction', 'note']
         self.summary_csv.write(','.join(header) + '\n')
 
     def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
@@ -792,7 +803,7 @@ class GFP(MicroDevice):
 
         #Relevant param is fluor GFP (cyan)
         worm_fluor = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
-        print('GFP value = ' + str(worm_fluor))
+        print('GFP value (95th percentile) = ' + str(worm_fluor))
 
         if calibration:
             direction = 'straight'
@@ -812,7 +823,51 @@ class GFP(MicroDevice):
     def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
         """Function for returning the right csv lin config for a given class.
         Here, returns the number, size, fluorescence, time between worms, directions, and note (hist or sort)
-        sort_param = GFP fluorescence
+        sort_param = GFP fluorescence (percentile 95)
+        """
+
+        worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
+        return worm_data
+    
+class GFP_over_99_mean(MicroDevice):
+    """Sorts by fluorescence value given by taking the mean of pixel intensities over the 99th percetnile. Appropriate for mir-47p::GFP.
+    """
+
+    def setup_csv(self, file_location, info):
+        self.summary_csv_location = file_location.joinpath('summary_csv' + info + '.csv')
+        self.summary_csv = open(str(self.summary_csv_location), 'w')
+        header = ['worm_number', 'size', 'red_autofluor', 'fluorescence_over_99_mean', 'time', 'direction', 'note']
+        self.summary_csv.write(','.join(header) + '\n')
+
+    def analyze(self, cyan_subtracted, tritc_subtracted, worm_mask, worm_count, calibration = False):
+        """Class-specific method to determine measurement being sorted.
+        Takes background image, bf image of worm, worm count, and returns measurement + sort direction
+        Saves fluorescent (GFP) image
+        """
+
+        #Relevant param is fluor GFP (cyan)
+        worm_fluor = self.fluor_over_99_mean(cyan_subtracted, worm_mask)
+        print('GFP value (over 99th percentile mean) = ' + str(worm_fluor))
+
+        if calibration:
+            direction = 'straight'
+            return worm_fluor, direction
+
+        elif not calibration:
+
+            if worm_fluor >= self.upper_threshold:
+                direction = 'up'
+            elif worm_fluor <= self.lower_threshold:
+                direction = 'down'
+            else:
+                direction = 'straight'
+
+            return worm_fluor, direction
+
+    def generate_data(self, worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note):
+        """Function for returning the right csv lin config for a given class.
+        Here, returns the number, size, fluorescence, time between worms, directions, and note (hist or sort)
+        sort_param = GFP fluorescence over 99 mean
         """
 
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
