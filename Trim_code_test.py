@@ -423,7 +423,7 @@ class MicroDevice:
        fluor_95th = self.find_95th_fluor_amount(cyan_subtracted, mask)
        fluor_median = self.find_median_fluor_amount(cyan_subtracted, mask)
 
-       if 2*fluor_median >= fluor_95th:
+       if 3*fluor_median >= fluor_95th:
            return True
        else:
            pass
