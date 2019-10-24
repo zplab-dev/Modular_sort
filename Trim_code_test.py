@@ -88,7 +88,7 @@ class MicroDevice:
     test.run()
     """
 
-    def __init__(self, exp_direct):
+    def __init__(self, exp_direct, af_filter=True):
         """Initalizes the scope and device
         """
         #Initialize scope:
@@ -111,6 +111,10 @@ class MicroDevice:
 
         #Make sure device is clear:
         self.device_clear_tubes()
+        if af_filter:
+            self.af_filter = True
+        else:
+            self.af_filter = False
 
     def write_csv_line(self,csv,data):
         csv.write(','.join(map(str, data)) + '\n')
@@ -356,7 +360,6 @@ class MicroDevice:
     def check_cleared(self, background, worm_count):        #TODO: Fix force reset option, because flag never triggers
                                                             #how to make this better? Reject worm after too long?
         time_clear_start = time.time()
-        message_sent = False
         while True:
             current_image = self.capture_image(self.bright)
             sorted_worm_difference = abs(current_image[CLEARING_AREA].astype('int32') - background[CLEARING_AREA].astype('int32'))
@@ -368,10 +371,12 @@ class MicroDevice:
                 self.device.execute(SEWER_CHANNEL_PRESSURE)
                 print('still pushing')
                 time_stuck = time.time()
-                if time_stuck - time_clear_start > 60 and message_sent == False:
+                if time_stuck - time_clear_start > 60:
                     self.send_text(message='Sort stuck trying to clear')
                     print('Sent text: Device stuck, reseting bg')
                     message_sent = True
+                    self.device.execute(UP_CHANNEL_SUCK, STRAIGHT_CHANNEL_SUCK, DOWN_CHANNEL_SUCK)
+                    time.sleep(1)
                     self.reset_background(worm_count)
                     return True
 
@@ -455,7 +460,6 @@ class MicroDevice:
         for sorting. Also returns sorting parameter (fluorescence, length, etc) as list which can be updated.
         """
 
-        self.hist_values = []
         #TODO: would it not make more sense to save each parameter (fluor, size, etc) as an array and then put them all
         #together in the summary file? Then I wouldn't need a separate list for hist values, would just pull from all
         #fluors taken
@@ -491,6 +495,12 @@ class MicroDevice:
         reason why worm was rejected.
         """
         length, width = self.find_dimensions(worm_mask)
+        
+        #Autofluorescence (should be within an expected range for 6dph or older worms, if sorting 4dph or long-lived mutants, may need to turn off)
+        if self.af_filter:
+            if af <= 100:
+                print('Autofluorescence suspiciously low')
+                return 'low_af'
 
         #Worm size when imaged:
         if size1 > self.size_threshold:     #TODO: think on how to better decide size thresholds
@@ -523,12 +533,6 @@ class MicroDevice:
             self.save_image(post_analysis_image, 'size_difference_analyze', worm_count, _type = 'big')
             #Filing these with worms above size threshold for now because i'm not sure how often this gets used
             return 'new_worm'
-        
-        #Autofluorescence (should be within an expected range for adult worms)
-        elif af <= 100:
-            #Testing this out to filter young worms who won't be caught by size filter
-            print('Autofluorescence suspiciously low')
-            return 'low_af'
 
         #Passed all?
         else:
@@ -608,7 +612,7 @@ class MicroDevice:
                     print('Worm has been detected')
                     time_seen = time.time()
                     time_between_worms = time_seen - self.time_start
-                    print('Time since start: ' + str(time_between_worms / 60) + 'min')
+                    print('Time since start: ' + str(round(time_between_worms / 60, 3))+ ' min')
                     detected_image = current_image
                     self.worm_count += 1
                     if message_sent == True:
@@ -742,7 +746,7 @@ class MicroDevice:
             print('finally')
             #Close csv file?
 
-    def run(self):
+    def run(self, hist = []):
 
         self.setup_csv(self.file_location, self.info)
 
@@ -757,11 +761,11 @@ class MicroDevice:
         self.set_background_areas(self.worm_count)
         print('setting backgrounds')
         time.sleep(1)
-        #input for build hist?
 
-        self.size_threshold = 7600   #hard coding sizes for now
-        self.min_worm_size = 2600
-
+        self.size_threshold = 5500   #hard coding sizes for now
+        self.min_worm_size = 2300
+        
+        self.hist_values = hist
         self.build_hist(size=100)
 
         self.scope.camera.start_image_sequence_acquisition(frame_count=None, trigger_mode='Software')
@@ -931,6 +935,7 @@ class Filter(MicroDevice):
         """
 
         worm_fluor = self.find_95th_fluor_amount(cyan_subtracted, worm_mask)
+        print('GFP value (95th percentile) = ' + str(worm_fluor))
         direction = 'straight'
 
         return worm_fluor, direction
@@ -955,7 +960,7 @@ class Filter(MicroDevice):
 
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
-    
+   """ 
     def run(self):
 
         self.setup_csv(self.file_location, self.info)
@@ -974,7 +979,7 @@ class Filter(MicroDevice):
         #input for build hist?
 
         self.size_threshold = 7600   #hard coding sizes for now
-        self.min_worm_size = 2600
+        self.min_worm_size = 2300
 
         self.build_hist(size=100)
 
@@ -982,7 +987,8 @@ class Filter(MicroDevice):
 
         self.sort(calibration = False)
 
-        self.summary_csv.close()
+        self.summary_csv.close
+    """
     
 class Simulate(MicroDevice):
     """Sends worms up, down, and straight repeatedly. Useful for simulating a sort in each direction. Unfortunately, undesirable worms (short, low af, etc) will still be sent straight, so those will need to be manually separated at the end before lifespan assay is carried out).
