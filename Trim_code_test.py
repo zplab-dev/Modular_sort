@@ -88,7 +88,7 @@ class MicroDevice:
     test.run()
     """
 
-    def __init__(self, exp_direct, af_filter=True):
+    def __init__(self, exp_direct, af_thresh=100):
         """Initalizes the scope and device
         """
         #Initialize scope:
@@ -111,10 +111,7 @@ class MicroDevice:
 
         #Make sure device is clear:
         self.device_clear_tubes()
-        if af_filter:
-            self.af_filter = True
-        else:
-            self.af_filter = False
+        self.af_thresh = af_thresh
 
     def write_csv_line(self,csv,data):
         csv.write(','.join(map(str, data)) + '\n')
@@ -497,10 +494,10 @@ class MicroDevice:
         length, width = self.find_dimensions(worm_mask)
         
         #Autofluorescence (should be within an expected range for 6dph or older worms, if sorting 4dph or long-lived mutants, may need to turn off)
-        if self.af_filter:
-            if af <= 100:
-                print('Autofluorescence suspiciously low')
-                return 'low_af'
+        
+        if af <= self.af_thresh:
+            print('Autofluorescence suspiciously low')
+            return 'low_af'
 
         #Worm size when imaged:
         if size1 > self.size_threshold:     #TODO: think on how to better decide size thresholds
@@ -762,7 +759,7 @@ class MicroDevice:
         print('setting backgrounds')
         time.sleep(1)
 
-        self.size_threshold = 5500   #hard coding sizes for now
+        self.size_threshold = 5700   #hard coding sizes for now
         self.min_worm_size = 2300
         
         self.hist_values = hist
@@ -960,7 +957,7 @@ class Filter(MicroDevice):
 
         worm_data = [worm_count, worm_size, autofluorescence, sort_param, time_between_worms, direction, note]
         return worm_data
-   """ 
+     
     def run(self):
 
         self.setup_csv(self.file_location, self.info)
@@ -978,7 +975,7 @@ class Filter(MicroDevice):
         time.sleep(1)
         #input for build hist?
 
-        self.size_threshold = 7600   #hard coding sizes for now
+        self.size_threshold = 5500   #hard coding sizes for now
         self.min_worm_size = 2300
 
         self.build_hist(size=100)
@@ -988,7 +985,7 @@ class Filter(MicroDevice):
         self.sort(calibration = False)
 
         self.summary_csv.close
-    """
+    
     
 class Simulate(MicroDevice):
     """Sends worms up, down, and straight repeatedly. Useful for simulating a sort in each direction. Unfortunately, undesirable worms (short, low af, etc) will still be sent straight, so those will need to be manually separated at the end before lifespan assay is carried out).
